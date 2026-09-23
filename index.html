@@ -275,6 +275,44 @@
     border:1px solid var(--border); background:var(--surface-2); color:var(--text-primary);
     border-radius:9px; padding:11px 16px; font-size:13.5px; font-weight:700; cursor:pointer; white-space:nowrap;
   }
+
+  /* ---------- Gráficas (Pareto + ranking por clasificación) ---------- */
+  .chartLegend{ display:flex; gap:16px; flex-wrap:wrap; margin-bottom:10px; font-size:12px; color:var(--text-secondary); }
+  .chartLegend .key{ display:inline-flex; align-items:center; gap:6px; }
+  .chartLegend .swBar{ width:12px; height:12px; border-radius:3px; background:var(--series-2); display:inline-block; }
+  .chartLegend .swLine{ width:14px; height:2px; border-radius:2px; background:var(--series-1); display:inline-block; }
+  .chartScroll{ overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; }
+  .chartScroll svg{ display:block; }
+  .chartSvg text{ font-family:inherit; fill:var(--text-secondary); }
+  .chartSvg .axisLine{ stroke:var(--grid); stroke-width:1; }
+  .chartSvg .refLine{ stroke:var(--text-muted); stroke-width:1; stroke-dasharray:3 3; }
+  .chartSvg .barMark{ fill:var(--series-2); cursor:pointer; }
+  .chartSvg .barMark:hover, .chartSvg .barMark.hover{ fill:color-mix(in srgb, var(--series-2) 85%, black 15%); }
+  .chartSvg .lineMark{ fill:none; stroke:var(--series-1); stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .chartSvg .lineDot{ fill:var(--series-1); stroke:var(--surface); stroke-width:2; cursor:pointer; }
+  .chartSvg .lineDot:hover, .chartSvg .lineDot.hover{ fill:color-mix(in srgb, var(--series-1) 85%, black 15%); }
+  .chartSvg .axisLabel{ font-size:10.5px; fill:var(--text-muted); }
+  .chartSvg .valueLabel{ font-size:11px; font-weight:700; fill:var(--text-primary); }
+  .chartSvg .calloutLabel{ font-size:11px; font-weight:700; fill:var(--series-1); }
+
+  #chartTooltip{
+    position:fixed; z-index:60; pointer-events:none; background:var(--text-primary); color:var(--page);
+    padding:7px 10px; border-radius:8px; font-size:12.5px; line-height:1.4; max-width:220px;
+    opacity:0; transform:translate(-50%,-100%); transition:opacity .1s; white-space:nowrap;
+  }
+  #chartTooltip.show{ opacity:1; }
+  #chartTooltip b{ font-variant-numeric:tabular-nums; }
+
+  .rankRow{ padding:12px 0; border-top:1px solid var(--border); }
+  .rankRow:first-of-type{ border-top:none; padding-top:4px; }
+  .rankHead{ display:flex; align-items:baseline; gap:8px; margin-bottom:8px; }
+  .rankHead .num{ font-size:13px; font-weight:800; color:var(--text-muted); min-width:18px; }
+  .rankHead .name{ font-size:13.5px; font-weight:700; color:var(--text-primary); flex:1; }
+  .rankHead .total{ font-size:12.5px; font-weight:700; color:var(--text-secondary); font-variant-numeric:tabular-nums; }
+  .stackTrack{ display:flex; height:18px; border-radius:5px; overflow:hidden; gap:2px; background:var(--grid); }
+  .stackSeg{ height:100%; cursor:pointer; }
+  .rankDominante{ font-size:12px; color:var(--text-secondary); margin-top:6px; }
+  .rankDominante b{ color:var(--text-primary); }
 </style>
 </head>
 <body>
@@ -372,6 +410,7 @@
 
   <div id="toast"></div>
 </div>
+<div id="chartTooltip" role="tooltip" aria-hidden="true"></div>
 
 <!-- ===== Barra de acción fija (muestreo) ===== -->
 <div id="actionBar" class="hidden">
@@ -798,8 +837,13 @@ async function registrarPina(){
     for (const d of snapshot.defectos) {
       updates[`porDefecto.${d}`] = increment(1);
       updates[`porDia.${dia}.porDefecto.${d}`] = increment(1);
-      if (esExportacion) updates[`porCalibreDefecto.c${snapshot.calibre}.${d}`] = increment(1);
-      else updates[`porCategoriaDefecto.${snapshot.categoria}.${d}`] = increment(1);
+      if (esExportacion) {
+        updates[`porCalibreDefecto.c${snapshot.calibre}.${d}`] = increment(1);
+        updates[`porDia.${dia}.porCalibreDefecto.c${snapshot.calibre}.${d}`] = increment(1);
+      } else {
+        updates[`porCategoriaDefecto.${snapshot.categoria}.${d}`] = increment(1);
+        updates[`porDia.${dia}.porCategoriaDefecto.${snapshot.categoria}.${d}`] = increment(1);
+      }
     }
   }
   try {
@@ -840,8 +884,13 @@ async function deshacerUltima(){
     for (const d of last.defectos) {
       updates[`porDefecto.${d}`] = increment(-1);
       updates[`porDia.${dia}.porDefecto.${d}`] = increment(-1);
-      if (esExportacion) updates[`porCalibreDefecto.c${last.calibre}.${d}`] = increment(-1);
-      else updates[`porCategoriaDefecto.${last.categoria}.${d}`] = increment(-1);
+      if (esExportacion) {
+        updates[`porCalibreDefecto.c${last.calibre}.${d}`] = increment(-1);
+        updates[`porDia.${dia}.porCalibreDefecto.c${last.calibre}.${d}`] = increment(-1);
+      } else {
+        updates[`porCategoriaDefecto.${last.categoria}.${d}`] = increment(-1);
+        updates[`porDia.${dia}.porCategoriaDefecto.${last.categoria}.${d}`] = increment(-1);
+      }
     }
   }
   try {
@@ -1035,6 +1084,7 @@ function renderResumenGeneral(){
 
   let total = 0, sinDefectoTotal = 0;
   const porGrupo = {}, porCalibreAg = {}, porCategoriaAg = {}, porDefectoAg = {};
+  const porCalibreDefectoAg = {}, porCategoriaDefectoAg = {}; // { defectoKey: { xKey: count } }
 
   ultimasSesionesDocs.forEach(({d}) => {
     const dias = d.porDia || {};
@@ -1049,8 +1099,22 @@ function renderResumenGeneral(){
       Object.entries(pDef).forEach(([k,v]) => { if (k !== 'sinDefecto' && v) porDefectoAg[k] = (porDefectoAg[k]||0) + v; });
       if (d.tipo === 'exportacion') {
         Object.entries(dd.porCalibre||{}).forEach(([k,v]) => { if (v) porCalibreAg[k] = (porCalibreAg[k]||0) + v; });
+        Object.entries(dd.porCalibreDefecto||{}).forEach(([calKey, defs]) => {
+          Object.entries(defs||{}).forEach(([defKey,v]) => {
+            if (!v) return;
+            porCalibreDefectoAg[defKey] = porCalibreDefectoAg[defKey] || {};
+            porCalibreDefectoAg[defKey][calKey] = (porCalibreDefectoAg[defKey][calKey]||0) + v;
+          });
+        });
       } else {
         Object.entries(dd.porCategoria||{}).forEach(([k,v]) => { if (v) porCategoriaAg[k] = (porCategoriaAg[k]||0) + v; });
+        Object.entries(dd.porCategoriaDefecto||{}).forEach(([catKey, defs]) => {
+          Object.entries(defs||{}).forEach(([defKey,v]) => {
+            if (!v) return;
+            porCategoriaDefectoAg[defKey] = porCategoriaDefectoAg[defKey] || {};
+            porCategoriaDefectoAg[defKey][catKey] = (porCategoriaDefectoAg[defKey][catKey]||0) + v;
+          });
+        });
       }
     });
   });
@@ -1077,23 +1141,192 @@ function renderResumenGeneral(){
     bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por categoría (Nacional)</div>${bars}</div>`;
   }
 
-  const defEntries = Object.entries(porDefectoAg).sort((a,b) => b[1]-a[1]).slice(0,12);
-  const maxDef = Math.max(1, ...defEntries.map(([,v]) => v));
-  const barsDef = defEntries.length
-    ? defEntries.map(([k,v]) => barra(DEFECTO_LABEL[k]||k, v, maxDef, 'var(--series-2)')).join('')
-    : '<div style="color:var(--text-muted);font-size:13px;">Sin defectos registrados en este rango.</div>';
-
   cont.innerHTML = `
     <div class="statTiles" style="margin-bottom:14px;">
       <div class="statTile"><div class="v">${total}</div><div class="l">Piñas muestreadas</div></div>
       <div class="statTile"><div class="v">${pctSinDefecto}%</div><div class="l">Sin defecto</div></div>
       <div class="statTile"><div class="v">${gruposOrdenados.length}</div><div class="l">Grupos activos</div></div>
-      <div class="statTile"><div class="v" style="font-size:15px;line-height:1.3;">${defEntries.length ? DEFECTO_LABEL[defEntries[0][0]] : '—'}</div><div class="l">Defecto más frecuente</div></div>
+      <div class="statTile"><div class="v">${total - sinDefectoTotal}</div><div class="l">Piñas con defecto</div></div>
     </div>
     <div class="panel"><div class="panelTitle">Por grupo</div>${barsGrupo}</div>
     ${bloquesClasificacion}
-    <div class="panel"><div class="panelTitle">Por defecto (top 12)</div>${barsDef}</div>
+    <div class="panel">
+      <div class="panelTitle">Pareto de defectos</div>
+      <div id="paretoDefectos"></div>
+    </div>
+    ${Object.keys(porCategoriaDefectoAg).length ? '<div class="panel"><div class="panelTitle">Defectos por categoría — dónde sale más cada uno</div><div id="rankingCategoriaDefecto"></div></div>' : ''}
+    ${Object.keys(porCalibreDefectoAg).length ? '<div class="panel"><div class="panelTitle">Defectos por calibre — dónde sale más cada uno</div><div id="rankingCalibreDefecto"></div></div>' : ''}
   `;
+
+  renderParetoDefectos(document.getElementById('paretoDefectos'), Object.entries(porDefectoAg));
+  if (Object.keys(porCategoriaDefectoAg).length) {
+    const itemsCat = CATEGORIAS.map(c => ({ key:c.key, label:c.label, color:c.color }));
+    renderRankingDefectosPorClasificacion(document.getElementById('rankingCategoriaDefecto'), porCategoriaDefectoAg, itemsCat);
+  }
+  if (Object.keys(porCalibreDefectoAg).length) {
+    const itemsCal = CALIBRES.map(c => ({ key:'c'+c, label:'Calibre '+c, color:`var(--cal-${c})` }));
+    renderRankingDefectosPorClasificacion(document.getElementById('rankingCalibreDefecto'), porCalibreDefectoAg, itemsCal);
+  }
+}
+
+/* ---------------- Tooltip compartido para gráficas ---------------- */
+const chartTooltipEl = document.getElementById('chartTooltip');
+function posicionarTooltip(evt){
+  const x = (evt && evt.clientX) || 0;
+  const y = (evt && evt.clientY) || 0;
+  chartTooltipEl.style.left = x + 'px';
+  chartTooltipEl.style.top = (y - 10) + 'px';
+}
+function mostrarTooltip(evt, filas){
+  chartTooltipEl.textContent = '';
+  filas.forEach(f => {
+    const row = document.createElement('div');
+    if (f.color) {
+      const key = document.createElement('span');
+      key.style.cssText = `display:inline-block;width:10px;height:2px;background:${f.color};margin-right:6px;vertical-align:middle;`;
+      row.appendChild(key);
+    }
+    row.appendChild(document.createTextNode(f.label ? f.label + ': ' : ''));
+    const strong = document.createElement('b');
+    strong.textContent = String(f.value);
+    row.appendChild(strong);
+    chartTooltipEl.appendChild(row);
+  });
+  chartTooltipEl.classList.add('show');
+  posicionarTooltip(evt);
+}
+function ocultarTooltip(){ chartTooltipEl.classList.remove('show'); }
+
+/* ---------------- Pareto de defectos (barras + acumulado, un solo eje 0-100%) ---------------- */
+function renderParetoDefectos(container, entradas){
+  const ordenadas = entradas.slice().sort((a,b) => b[1]-a[1]);
+  const totalDef = ordenadas.reduce((s,[,v]) => s+v, 0);
+  if (!totalDef) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Sin defectos registrados en este rango.</div>';
+    return;
+  }
+  const TOP_N = 10;
+  let top = ordenadas.slice(0, TOP_N);
+  const restoSum = ordenadas.slice(TOP_N).reduce((s,[,v]) => s+v, 0);
+  if (restoSum > 0) top = [...top, ['__otros', restoSum]];
+
+  let acumulado = 0;
+  const puntos = top.map(([k,v]) => {
+    const pct = (v/totalDef)*100;
+    acumulado += pct;
+    return { key:k, label: k === '__otros' ? 'Otros' : (DEFECTO_LABEL[k]||k), valor:v, pct, acumPct: Math.min(100, acumulado) };
+  });
+
+  const barW = 32, gap = 20, marginL = 46, marginR = 14, marginT = 20, marginB = 92, plotH = 210;
+  const w = marginL + marginR + puntos.length*(barW+gap);
+  const h = marginT + plotH + marginB;
+  const xAt = i => marginL + i*(barW+gap) + gap/2;
+  const yFor = pct => marginT + plotH - (pct/100)*plotH;
+  const idx80 = puntos.findIndex(p => p.acumPct >= 80);
+
+  const gridLines = [0,25,50,75,100].map(pct => `
+    <line class="axisLine" x1="${marginL-6}" x2="${w-marginR}" y1="${yFor(pct)}" y2="${yFor(pct)}" />
+    <text class="axisLabel" x="${marginL-10}" y="${yFor(pct)+3}" text-anchor="end">${pct}%</text>
+  `).join('');
+  const ref80Y = yFor(80);
+  const ref80 = `
+    <line class="refLine" x1="${marginL-6}" x2="${w-marginR}" y1="${ref80Y}" y2="${ref80Y}" />
+    <text class="axisLabel" x="${w-marginR}" y="${ref80Y-4}" text-anchor="end">80%</text>
+  `;
+  const bars = puntos.map((p,i) => {
+    const bx = xAt(i), by = yFor(p.pct), bh = Math.max(1, (marginT+plotH) - by);
+    return `<rect class="barMark" data-i="${i}" x="${bx}" y="${by}" width="${barW}" height="${bh}" rx="4" ry="4"/>`;
+  }).join('');
+  const linePts = puntos.map((p,i) => `${xAt(i)+barW/2},${yFor(p.acumPct)}`).join(' ');
+  const dots = puntos.map((p,i) => `<circle class="lineDot" data-i="${i}" cx="${xAt(i)+barW/2}" cy="${yFor(p.acumPct)}" r="4"/>`).join('');
+  const xLabels = puntos.map((p,i) => {
+    const lx = xAt(i)+barW/2, ly = marginT+plotH+14;
+    const txt = p.label.length > 16 ? p.label.slice(0,15)+'…' : p.label;
+    return `<text class="axisLabel" x="${lx}" y="${ly}" text-anchor="end" transform="rotate(-40 ${lx} ${ly})">${txt}</text>`;
+  }).join('');
+  const callout = idx80 >= 0
+    ? `<text class="calloutLabel" x="${xAt(idx80)+barW/2}" y="${yFor(puntos[idx80].acumPct)-12}" text-anchor="middle">${Math.round(puntos[idx80].acumPct)}%</text>`
+    : '';
+  const topLabel = puntos.length ? `<text class="valueLabel" x="${xAt(0)+barW/2}" y="${yFor(puntos[0].pct)-8}" text-anchor="middle">${puntos[0].valor}</text>` : '';
+
+  container.innerHTML = `
+    <div class="chartLegend">
+      <span class="key"><span class="swBar"></span>Defectos (% del total)</span>
+      <span class="key"><span class="swLine"></span>Acumulado %</span>
+    </div>
+    <div class="chartScroll">
+      <svg class="chartSvg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" style="min-width:${w}px;">
+        ${gridLines}${ref80}${bars}
+        <polyline class="lineMark" points="${linePts}" />
+        ${dots}${xLabels}${callout}${topLabel}
+      </svg>
+    </div>
+    ${idx80 >= 0 ? `<div class="rankDominante">El 80% de los defectos viene de los primeros <b>${idx80+1}</b> tipos.</div>` : ''}
+  `;
+
+  container.querySelectorAll('.barMark').forEach(el => {
+    const p = puntos[+el.dataset.i];
+    const abrir = (evt) => { el.classList.add('hover'); mostrarTooltip(evt, [{color:'var(--series-2)', label:p.label, value:`${p.valor} (${Math.round(p.pct)}%)`}]); };
+    el.addEventListener('pointerenter', abrir);
+    el.addEventListener('pointermove', posicionarTooltip);
+    el.addEventListener('pointerdown', abrir);
+    el.addEventListener('pointerleave', () => { el.classList.remove('hover'); ocultarTooltip(); });
+  });
+  container.querySelectorAll('.lineDot').forEach(el => {
+    const p = puntos[+el.dataset.i];
+    const abrir = (evt) => { el.classList.add('hover'); mostrarTooltip(evt, [{color:'var(--series-1)', label:'Acumulado hasta '+p.label, value:`${Math.round(p.acumPct)}%`}]); };
+    el.addEventListener('pointerenter', abrir);
+    el.addEventListener('pointermove', posicionarTooltip);
+    el.addEventListener('pointerdown', abrir);
+    el.addEventListener('pointerleave', () => { el.classList.remove('hover'); ocultarTooltip(); });
+  });
+}
+
+/* ---------------- Ranking: en qué categoría/calibre sale más cada defecto ---------------- */
+function renderRankingDefectosPorClasificacion(container, porXDefectoAg, items){
+  const totales = Object.entries(porXDefectoAg).map(([defKey, porX]) => ({
+    defKey, porX, total: Object.values(porX).reduce((s,v) => s+v, 0)
+  })).sort((a,b) => b.total - a.total).slice(0,6);
+
+  if (!totales.length) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Sin datos suficientes en este rango.</div>';
+    return;
+  }
+
+  const legend = `<div class="chartLegend">${items.map(it => `<span class="key"><span class="swBar" style="background:${it.color}"></span>${it.label}</span>`).join('')}</div>`;
+
+  const rows = totales.map((t,i) => {
+    const dominante = items.map(it => [it, t.porX[it.key]||0]).sort((a,b) => b[1]-a[1])[0];
+    const segs = items.filter(it => (t.porX[it.key]||0) > 0).map(it => {
+      const v = t.porX[it.key]||0;
+      const pct = (v/t.total)*100;
+      return `<div class="stackSeg" data-def="${t.defKey}" data-cat="${it.key}" style="width:${pct}%;background:${it.color}"></div>`;
+    }).join('');
+    return `
+      <div class="rankRow">
+        <div class="rankHead">
+          <span class="num">${i+1}.</span>
+          <span class="name">${DEFECTO_LABEL[t.defKey]||t.defKey}</span>
+          <span class="total">${t.total}</span>
+        </div>
+        <div class="stackTrack">${segs}</div>
+        <div class="rankDominante">Más frecuente en <b>${dominante[0].label}</b> (${dominante[1]} de ${t.total})</div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = legend + rows;
+
+  container.querySelectorAll('.stackSeg').forEach(el => {
+    const defKey = el.dataset.def, catKey = el.dataset.cat;
+    const it = items.find(x => x.key === catKey);
+    const v = (porXDefectoAg[defKey] && porXDefectoAg[defKey][catKey]) || 0;
+    const abrir = (evt) => mostrarTooltip(evt, [{color: it.color, label: it.label, value: v}]);
+    el.addEventListener('pointerenter', abrir);
+    el.addEventListener('pointermove', posicionarTooltip);
+    el.addEventListener('pointerdown', abrir);
+    el.addEventListener('pointerleave', ocultarTooltip);
+  });
 }
 
 /* ---------------- Resultados: charts ---------------- */
