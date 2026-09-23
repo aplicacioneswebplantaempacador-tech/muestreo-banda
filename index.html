@@ -407,7 +407,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
-  getFirestore, doc, getDoc, setDoc, onSnapshot,
+  getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot,
   collection, query, orderBy, limit, increment, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
@@ -803,7 +803,7 @@ async function registrarPina(){
     }
   }
   try {
-    await setDoc(doc(db,'sesiones',sesionActual.id), updates, { merge:true });
+    await updateDoc(doc(db,'sesiones',sesionActual.id), updates);
     undoStack.push(snapshot);
     if (undoStack.length > 30) undoStack.shift();
     document.getElementById('btnDeshacer').disabled = false;
@@ -845,7 +845,7 @@ async function deshacerUltima(){
     }
   }
   try {
-    await setDoc(doc(db,'sesiones',sesionActual.id), updates, { merge:true });
+    await updateDoc(doc(db,'sesiones',sesionActual.id), updates);
     showToast('↺ Última piña deshecha');
   } catch (e) {
     showToast('✗ Error al deshacer: ' + e.message);
