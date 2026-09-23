@@ -248,11 +248,15 @@
   .sesionRow.active{ border-color:var(--series-1); background:color-mix(in srgb, var(--series-1) 10%, var(--surface-2)); }
   .sesionRow .n{ color:var(--text-muted); font-variant-numeric:tabular-nums; }
 
-  .statTiles{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .statTiles{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; align-items:stretch; }
   @media (max-width:640px){ .statTiles{ grid-template-columns:repeat(2,1fr); } }
   .statTile{ background:var(--surface-2); border-radius:12px; padding:14px; }
   .statTile .v{ font-size:26px; font-weight:800; font-variant-numeric:tabular-nums; }
   .statTile .l{ font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; margin-top:2px; }
+  .statTileList .l{ margin-top:0; margin-bottom:8px; }
+  .paretoTextoRow{ display:flex; justify-content:space-between; gap:8px; font-size:12px; color:var(--text-primary); padding:2px 0; }
+  .paretoTextoRow b{ font-variant-numeric:tabular-nums; color:var(--series-2); }
+  .paretoTextoFoot{ font-size:10.5px; color:var(--text-muted); margin-top:4px; }
 
   .barRow{ display:grid; grid-template-columns:110px 1fr 52px; align-items:center; gap:10px; margin-bottom:7px; }
   .barRow .lab{ font-size:12.5px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -267,7 +271,7 @@
 
   .filtroFechas{ display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
   .filtroFechas .field{ margin:0; min-width:150px; flex:1 1 150px; }
-  .filtroFechas input[type="date"]{
+  .filtroFechas input[type="date"], .filtroFechas select{
     width:100%; padding:10px 12px; font-size:14px; border-radius:9px;
     border:1px solid var(--border); background:var(--surface-2); color:var(--text-primary);
   }
@@ -394,6 +398,7 @@
       <div class="filtroFechas">
         <div class="field"><label for="filtroDesde">Desde</label><input type="date" id="filtroDesde"></div>
         <div class="field"><label for="filtroHasta">Hasta</label><input type="date" id="filtroHasta"></div>
+        <div class="field"><label for="filtroGrupo">Grupo</label><select id="filtroGrupo"><option value="">Todos los grupos</option></select></div>
         <button type="button" id="btnHoy" class="btnGhost">Hoy</button>
       </div>
       <div id="resumenGeneralContenido"></div>
@@ -1029,7 +1034,7 @@ let unsubListaSesiones = null;
 let ultimasSesionesDocs = [];
 
 function cargarListaSesiones(){
-  if (unsubListaSesiones) { renderListaSesiones(); renderResumenGeneral(); return; } // ya suscrito, solo repintar
+  if (unsubListaSesiones) { renderListaSesiones(); poblarFiltroGrupo(); renderResumenGeneral(); return; } // ya suscrito, solo repintar
   const cont = document.getElementById('listaSesiones');
   cont.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Cargando…</div>';
   try {
@@ -1038,6 +1043,7 @@ function cargarListaSesiones(){
       ultimasSesionesDocs = [];
       qs.forEach(docSnap => ultimasSesionesDocs.push({ id: docSnap.id, d: docSnap.data() }));
       renderListaSesiones();
+      poblarFiltroGrupo();
       renderResumenGeneral();
     });
   } catch (e) {
@@ -1072,7 +1078,17 @@ function inicializarFiltrosFecha(){
 inicializarFiltrosFecha();
 document.getElementById('filtroDesde').addEventListener('change', renderResumenGeneral);
 document.getElementById('filtroHasta').addEventListener('change', renderResumenGeneral);
+document.getElementById('filtroGrupo').addEventListener('change', renderResumenGeneral);
 document.getElementById('btnHoy').addEventListener('click', () => { inicializarFiltrosFecha(); renderResumenGeneral(); });
+
+function poblarFiltroGrupo(){
+  const sel = document.getElementById('filtroGrupo');
+  const actual = sel.value;
+  const grupos = [...new Set(ultimasSesionesDocs.map(({d}) => d.grupo).filter(Boolean))]
+    .sort((a,b) => a.localeCompare(b, 'es', {numeric:true}));
+  sel.innerHTML = '<option value="">Todos los grupos</option>' + grupos.map(g => `<option value="${g}">Grupo ${g}</option>`).join('');
+  if (grupos.includes(actual)) sel.value = actual;
+}
 
 function renderResumenGeneral(){
   const cont = document.getElementById('resumenGeneralContenido');
@@ -1081,12 +1097,15 @@ function renderResumenGeneral(){
   if (!desdeInput || !hastaInput) { cont.innerHTML = ''; return; }
   const desdeN = desdeInput.replace(/-/g,'');
   const hastaN = hastaInput.replace(/-/g,'');
+  const grupoFiltro = document.getElementById('filtroGrupo').value;
+  const etiquetaGrupo = grupoFiltro ? `Grupo ${grupoFiltro}` : 'Todos los grupos';
 
   let total = 0, sinDefectoTotal = 0;
   const porGrupo = {}, porCalibreAg = {}, porCategoriaAg = {}, porDefectoAg = {};
   const porCalibreDefectoAg = {}, porCategoriaDefectoAg = {}; // { defectoKey: { xKey: count } }
 
   ultimasSesionesDocs.forEach(({d}) => {
+    if (grupoFiltro && d.grupo !== grupoFiltro) return;
     const dias = d.porDia || {};
     Object.entries(dias).forEach(([fecha, dd]) => {
       if (fecha < desdeN || fecha > hastaN) return;
@@ -1126,19 +1145,13 @@ function renderResumenGeneral(){
 
   const pctSinDefecto = Math.round((sinDefectoTotal/total)*100);
   const gruposOrdenados = Object.entries(porGrupo).sort((a,b) => b[1]-a[1]);
-  const maxGrupo = Math.max(1, ...gruposOrdenados.map(([,v]) => v));
-  const barsGrupo = gruposOrdenados.map(([g,v]) => barra('Grupo '+g, v, maxGrupo, 'var(--series-1)')).join('');
 
   let bloquesClasificacion = '';
   if (Object.keys(porCalibreAg).length) {
-    const maxC = Math.max(1, ...CALIBRES.map(c => porCalibreAg['c'+c]||0));
-    const bars = CALIBRES.map(c => barra('Calibre '+c, porCalibreAg['c'+c]||0, maxC, `var(--cal-${c})`)).join('');
-    bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por calibre (Exportación)</div>${bars}</div>`;
+    bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por calibre (Exportación) — ${etiquetaGrupo}</div><div id="lineCalibre"></div></div>`;
   }
   if (Object.keys(porCategoriaAg).length) {
-    const maxCat = Math.max(1, ...CATEGORIAS.map(c => porCategoriaAg[c.key]||0));
-    const bars = CATEGORIAS.map(c => barra(c.label, porCategoriaAg[c.key]||0, maxCat, c.color)).join('');
-    bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por categoría (Nacional)</div>${bars}</div>`;
+    bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por categoría (Nacional) — ${etiquetaGrupo}</div><div id="lineCategoria"></div></div>`;
   }
 
   cont.innerHTML = `
@@ -1146,19 +1159,21 @@ function renderResumenGeneral(){
       <div class="statTile"><div class="v">${total}</div><div class="l">Piñas muestreadas</div></div>
       <div class="statTile"><div class="v">${pctSinDefecto}%</div><div class="l">Sin defecto</div></div>
       <div class="statTile"><div class="v">${gruposOrdenados.length}</div><div class="l">Grupos activos</div></div>
-      <div class="statTile"><div class="v">${total - sinDefectoTotal}</div><div class="l">Piñas con defecto</div></div>
+      ${paretoTextoHTML(Object.entries(porDefectoAg))}
     </div>
-    <div class="panel"><div class="panelTitle">Por grupo</div>${barsGrupo}</div>
+    <div class="panel"><div class="panelTitle">Por grupo — ${etiquetaGrupo}</div><div id="lineGrupo"></div></div>
     ${bloquesClasificacion}
-    <div class="panel">
-      <div class="panelTitle">Pareto de defectos</div>
-      <div id="paretoDefectos"></div>
-    </div>
-    ${Object.keys(porCategoriaDefectoAg).length ? '<div class="panel"><div class="panelTitle">Defectos por categoría — dónde sale más cada uno</div><div id="rankingCategoriaDefecto"></div></div>' : ''}
-    ${Object.keys(porCalibreDefectoAg).length ? '<div class="panel"><div class="panelTitle">Defectos por calibre — dónde sale más cada uno</div><div id="rankingCalibreDefecto"></div></div>' : ''}
+    ${Object.keys(porCategoriaDefectoAg).length ? `<div class="panel"><div class="panelTitle">Defectos por categoría — dónde sale más cada uno — ${etiquetaGrupo}</div><div id="rankingCategoriaDefecto"></div></div>` : ''}
+    ${Object.keys(porCalibreDefectoAg).length ? `<div class="panel"><div class="panelTitle">Defectos por calibre — dónde sale más cada uno — ${etiquetaGrupo}</div><div id="rankingCalibreDefecto"></div></div>` : ''}
   `;
 
-  renderParetoDefectos(document.getElementById('paretoDefectos'), Object.entries(porDefectoAg));
+  renderLineChart(document.getElementById('lineGrupo'), gruposOrdenados.map(([g,v]) => ({ label:'Grupo '+g, value:v })));
+  if (Object.keys(porCalibreAg).length) {
+    renderLineChart(document.getElementById('lineCalibre'), CALIBRES.map(c => ({ label:'Calibre '+c, value: porCalibreAg['c'+c]||0, color:`var(--cal-${c})` })));
+  }
+  if (Object.keys(porCategoriaAg).length) {
+    renderLineChart(document.getElementById('lineCategoria'), CATEGORIAS.map(c => ({ label:c.label, value: porCategoriaAg[c.key]||0, color:c.color })));
+  }
   if (Object.keys(porCategoriaDefectoAg).length) {
     const itemsCat = CATEGORIAS.map(c => ({ key:c.key, label:c.label, color:c.color }));
     renderRankingDefectosPorClasificacion(document.getElementById('rankingCategoriaDefecto'), porCategoriaDefectoAg, itemsCat);
@@ -1167,6 +1182,25 @@ function renderResumenGeneral(){
     const itemsCal = CALIBRES.map(c => ({ key:'c'+c, label:'Calibre '+c, color:`var(--cal-${c})` }));
     renderRankingDefectosPorClasificacion(document.getElementById('rankingCalibreDefecto'), porCalibreDefectoAg, itemsCal);
   }
+}
+
+/* ---------------- Pareto de defectos: SOLO texto — los tipos que explican el 80% ---------------- */
+function paretoTextoHTML(entradas){
+  const ordenadas = entradas.slice().sort((a,b) => b[1]-a[1]);
+  const total = ordenadas.reduce((s,[,v]) => s+v, 0);
+  if (!total) {
+    return `<div class="statTile statTileList"><div class="l">Defectos que explican el 80%</div><div class="paretoTextoRow"><span>Sin defectos</span></div></div>`;
+  }
+  let acumulado = 0;
+  const vitales = [];
+  for (const [k,v] of ordenadas) {
+    const pct = (v/total)*100;
+    acumulado += pct;
+    vitales.push({ label: DEFECTO_LABEL[k]||k, pct });
+    if (acumulado >= 80) break;
+  }
+  const filas = vitales.map(x => `<div class="paretoTextoRow"><span>${x.label}</span><b>${Math.round(x.pct)}%</b></div>`).join('');
+  return `<div class="statTile statTileList"><div class="l">Defectos que explican el 80%</div>${filas}<div class="paretoTextoFoot">${vitales.length} de ${ordenadas.length} tipos</div></div>`;
 }
 
 /* ---------------- Tooltip compartido para gráficas ---------------- */
@@ -1197,84 +1231,57 @@ function mostrarTooltip(evt, filas){
 }
 function ocultarTooltip(){ chartTooltipEl.classList.remove('show'); }
 
-/* ---------------- Pareto de defectos (barras + acumulado, un solo eje 0-100%) ---------------- */
-function renderParetoDefectos(container, entradas){
-  const ordenadas = entradas.slice().sort((a,b) => b[1]-a[1]);
-  const totalDef = ordenadas.reduce((s,[,v]) => s+v, 0);
-  if (!totalDef) {
-    container.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Sin defectos registrados en este rango.</div>';
+/* ---------------- Gráfica de línea genérica (Por grupo / Por calibre / Por categoría) ---------------- */
+function niceCeil(v){
+  if (v <= 5) return 5;
+  const mag = Math.pow(10, Math.floor(Math.log10(v)));
+  const norm = v / mag;
+  const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  return nice * mag;
+}
+function renderLineChart(container, puntos, opts){
+  opts = opts || {};
+  const colorLinea = opts.colorLinea || 'var(--text-muted)';
+  const colorPuntoDefault = opts.colorPunto || 'var(--series-1)';
+  if (!puntos.length || !puntos.some(p => p.value)) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Sin datos en este rango.</div>';
     return;
   }
-  const TOP_N = 10;
-  let top = ordenadas.slice(0, TOP_N);
-  const restoSum = ordenadas.slice(TOP_N).reduce((s,[,v]) => s+v, 0);
-  if (restoSum > 0) top = [...top, ['__otros', restoSum]];
-
-  let acumulado = 0;
-  const puntos = top.map(([k,v]) => {
-    const pct = (v/totalDef)*100;
-    acumulado += pct;
-    return { key:k, label: k === '__otros' ? 'Otros' : (DEFECTO_LABEL[k]||k), valor:v, pct, acumPct: Math.min(100, acumulado) };
-  });
-
-  const barW = 32, gap = 20, marginL = 46, marginR = 14, marginT = 20, marginB = 92, plotH = 210;
-  const w = marginL + marginR + puntos.length*(barW+gap);
+  const niceMax = niceCeil(Math.max(1, ...puntos.map(p => p.value)));
+  const gap = 50, marginL = 40, marginR = 16, marginT = 20, marginB = 84, plotH = 180;
+  const w = marginL + marginR + Math.max(1, puntos.length-1)*gap + 24;
   const h = marginT + plotH + marginB;
-  const xAt = i => marginL + i*(barW+gap) + gap/2;
-  const yFor = pct => marginT + plotH - (pct/100)*plotH;
-  const idx80 = puntos.findIndex(p => p.acumPct >= 80);
+  const xAt = i => puntos.length === 1 ? w/2 : (marginL + 12 + i*gap);
+  const yFor = v => marginT + plotH - (v/niceMax)*plotH;
+  const steps = 4;
 
-  const gridLines = [0,25,50,75,100].map(pct => `
-    <line class="axisLine" x1="${marginL-6}" x2="${w-marginR}" y1="${yFor(pct)}" y2="${yFor(pct)}" />
-    <text class="axisLabel" x="${marginL-10}" y="${yFor(pct)+3}" text-anchor="end">${pct}%</text>
+  const gridLines = Array.from({length: steps+1}, (_,i) => Math.round(niceMax*i/steps)).map(v => `
+    <line class="axisLine" x1="${marginL-6}" x2="${w-marginR}" y1="${yFor(v)}" y2="${yFor(v)}" />
+    <text class="axisLabel" x="${marginL-10}" y="${yFor(v)+3}" text-anchor="end">${v}</text>
   `).join('');
-  const ref80Y = yFor(80);
-  const ref80 = `
-    <line class="refLine" x1="${marginL-6}" x2="${w-marginR}" y1="${ref80Y}" y2="${ref80Y}" />
-    <text class="axisLabel" x="${w-marginR}" y="${ref80Y-4}" text-anchor="end">80%</text>
-  `;
-  const bars = puntos.map((p,i) => {
-    const bx = xAt(i), by = yFor(p.pct), bh = Math.max(1, (marginT+plotH) - by);
-    return `<rect class="barMark" data-i="${i}" x="${bx}" y="${by}" width="${barW}" height="${bh}" rx="4" ry="4"/>`;
-  }).join('');
-  const linePts = puntos.map((p,i) => `${xAt(i)+barW/2},${yFor(p.acumPct)}`).join(' ');
-  const dots = puntos.map((p,i) => `<circle class="lineDot" data-i="${i}" cx="${xAt(i)+barW/2}" cy="${yFor(p.acumPct)}" r="4"/>`).join('');
+  const linePts = puntos.map((p,i) => `${xAt(i)},${yFor(p.value)}`).join(' ');
+  const dots = puntos.map((p,i) => `<circle class="lineDot" data-i="${i}" cx="${xAt(i)}" cy="${yFor(p.value)}" r="4" style="fill:${p.color||colorPuntoDefault}"/>`).join('');
   const xLabels = puntos.map((p,i) => {
-    const lx = xAt(i)+barW/2, ly = marginT+plotH+14;
+    const lx = xAt(i), ly = marginT+plotH+14;
     const txt = p.label.length > 16 ? p.label.slice(0,15)+'…' : p.label;
     return `<text class="axisLabel" x="${lx}" y="${ly}" text-anchor="end" transform="rotate(-40 ${lx} ${ly})">${txt}</text>`;
   }).join('');
-  const callout = idx80 >= 0
-    ? `<text class="calloutLabel" x="${xAt(idx80)+barW/2}" y="${yFor(puntos[idx80].acumPct)-12}" text-anchor="middle">${Math.round(puntos[idx80].acumPct)}%</text>`
-    : '';
-  const topLabel = puntos.length ? `<text class="valueLabel" x="${xAt(0)+barW/2}" y="${yFor(puntos[0].pct)-8}" text-anchor="middle">${puntos[0].valor}</text>` : '';
+  const maxIdx = puntos.reduce((best,p,i,arr) => p.value > arr[best].value ? i : best, 0);
+  const maxLabel = `<text class="valueLabel" x="${xAt(maxIdx)}" y="${yFor(puntos[maxIdx].value)-9}" text-anchor="middle">${puntos[maxIdx].value}</text>`;
 
   container.innerHTML = `
-    <div class="chartLegend">
-      <span class="key"><span class="swBar"></span>Defectos (% del total)</span>
-      <span class="key"><span class="swLine"></span>Acumulado %</span>
-    </div>
     <div class="chartScroll">
       <svg class="chartSvg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" style="min-width:${w}px;">
-        ${gridLines}${ref80}${bars}
-        <polyline class="lineMark" points="${linePts}" />
-        ${dots}${xLabels}${callout}${topLabel}
+        ${gridLines}
+        <polyline class="lineMark" points="${linePts}" style="stroke:${colorLinea}" />
+        ${dots}${xLabels}${maxLabel}
       </svg>
     </div>
-    ${idx80 >= 0 ? `<div class="rankDominante">El 80% de los defectos viene de los primeros <b>${idx80+1}</b> tipos.</div>` : ''}
   `;
 
-  container.querySelectorAll('.barMark').forEach(el => {
-    const p = puntos[+el.dataset.i];
-    const abrir = (evt) => { el.classList.add('hover'); mostrarTooltip(evt, [{color:'var(--series-2)', label:p.label, value:`${p.valor} (${Math.round(p.pct)}%)`}]); };
-    el.addEventListener('pointerenter', abrir);
-    el.addEventListener('pointermove', posicionarTooltip);
-    el.addEventListener('pointerdown', abrir);
-    el.addEventListener('pointerleave', () => { el.classList.remove('hover'); ocultarTooltip(); });
-  });
   container.querySelectorAll('.lineDot').forEach(el => {
     const p = puntos[+el.dataset.i];
-    const abrir = (evt) => { el.classList.add('hover'); mostrarTooltip(evt, [{color:'var(--series-1)', label:'Acumulado hasta '+p.label, value:`${Math.round(p.acumPct)}%`}]); };
+    const abrir = (evt) => { el.classList.add('hover'); mostrarTooltip(evt, [{color: p.color||colorPuntoDefault, label:p.label, value:p.value}]); };
     el.addEventListener('pointerenter', abrir);
     el.addEventListener('pointermove', posicionarTooltip);
     el.addEventListener('pointerdown', abrir);
