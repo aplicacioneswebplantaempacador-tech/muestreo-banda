@@ -372,15 +372,15 @@
 </div>
 
 <script type="module">
-import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.2/app/+esm";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getFirestore, doc, getDoc, setDoc, onSnapshot,
   collection, query, orderBy, limit, increment, serverTimestamp
-} from "https://cdn.jsdelivr.net/npm/firebase@10.12.2/firestore/+esm";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getAuth, setPersistence, browserLocalPersistence,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged
-} from "https://cdn.jsdelivr.net/npm/firebase@10.12.2/auth/+esm";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 /* ---------------- Firebase ---------------- */
 const firebaseConfig = {
