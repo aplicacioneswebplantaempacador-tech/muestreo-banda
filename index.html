@@ -173,7 +173,12 @@
 
   .grid6{ display:grid; grid-template-columns:repeat(6,1fr); gap:8px; }
   .grid4{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  .grid2{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
   @media (max-width:640px){ .grid6{ grid-template-columns:repeat(3,1fr);} .grid4{ grid-template-columns:repeat(2,1fr);} }
+
+  #tipoRow .bigBtn{ min-height:76px; font-size:16px; }
+  #tipoRow .bigBtn small{ display:block; font-size:11px; font-weight:600; opacity:.75; margin-top:4px; text-transform:none; letter-spacing:0; }
+  #tipoWarn{ color:var(--status-critical); font-size:12.5px; font-weight:600; margin-top:8px; min-height:16px; }
 
   .bigBtn{
     border:2px solid var(--border); background:var(--surface-2); color:var(--text-primary);
@@ -271,7 +276,7 @@
     <button id="btnSalir" type="button" class="hidden">Cerrar sesión</button>
     <button id="btnAbrirLogin" type="button">Iniciar sesión</button>
     <span id="sessionChip" class="hidden">
-      <span>Lote <b id="chipLote"></b> · Grupo <b id="chipGrupo"></b> · Bloque <b id="chipBloque"></b></span>
+      <span><b id="chipTipo"></b> · Lote <b id="chipLote"></b> · Grupo <b id="chipGrupo"></b> · Bloque <b id="chipBloque"></b></span>
       <button id="btnCambiarSesion" type="button">Cambiar</button>
     </span>
     <nav id="navTabs" class="hidden">
@@ -285,6 +290,14 @@
     <h1>Nueva sesión de muestreo</h1>
     <p class="lead">Registra lote, grupo y bloque una sola vez. Luego calificas piña por piña sin volver a escribir nada.</p>
     <form id="formSesion">
+      <div class="field">
+        <label>Tipo de destino</label>
+        <div class="grid2" id="tipoRow">
+          <button type="button" class="bigBtn" data-tipo="exportacion">Exportación<small>Calibres 5 a 10</small></button>
+          <button type="button" class="bigBtn" data-tipo="nacional">Nacional<small>PE1, PE2, PE3, Guapita, Baby, Industria</small></button>
+        </div>
+        <div id="tipoWarn"></div>
+      </div>
       <div class="fieldRow">
         <div class="field"><label for="inLote">Lote</label><input id="inLote" required autocomplete="off" placeholder="Ej. 4521"></div>
         <div class="field"><label for="inGrupo">Grupo</label><input id="inGrupo" required autocomplete="off" placeholder="Ej. 12"></div>
@@ -301,13 +314,13 @@
 
   <!-- ===== Pantalla: muestreo rápido ===== -->
   <section id="screenMuestreo" class="hidden">
-    <div class="panel">
-      <div class="panelTitle">Calibre</div>
+    <div class="panel" id="panelCalibre">
+      <div class="panelTitle">Calibre (Exportación)</div>
       <div class="grid6" id="calibreRow"></div>
     </div>
-    <div class="panel">
-      <div class="panelTitle">Categoría</div>
-      <div class="grid4" id="categoriaRow"></div>
+    <div class="panel" id="panelCategoria">
+      <div class="panelTitle">Categoría (Nacional)</div>
+      <div class="grid6" id="categoriaRow"></div>
     </div>
     <div class="panel">
       <div class="panelTitle">Defectos (puedes marcar varios)</div>
@@ -396,7 +409,8 @@ const db = getFirestore(fbApp);
 const auth = getAuth(fbApp);
 
 /* ---------------- Estado (declarado antes de usarse en los listeners de abajo) ---------------- */
-let sesionActual = null; // {id, lote, grupo, bloque, muestreador}
+let sesionActual = null; // {id, lote, grupo, bloque, muestreador, tipo: 'exportacion'|'nacional'}
+let tipoElegido = null; // tipo elegido en la pantalla "Nueva sesión", antes de confirmar
 let sel = { calibre:null, categoria:null, defectos:new Set(), sinDefecto:false };
 let undoStack = [];
 let unsubResultados = null;
@@ -440,6 +454,7 @@ function mostrarPantallaSesion(){
   screenSesion.classList.remove('hidden');
   document.getElementById('navMuestreo').classList.add('active');
   document.getElementById('navResultados').classList.remove('active');
+  resetFormularioSesion();
   pintarRecientes();
 }
 
@@ -560,10 +575,12 @@ document.getElementById('formAuth').addEventListener('submit', async (e) => {
 /* ---------------- Datos de referencia ---------------- */
 const CALIBRES = [5,6,7,8,9,10];
 const CATEGORIAS = [
-  { key:'primera',  label:'Primera'  },
-  { key:'guapita',  label:'Guapita'  },
-  { key:'baby',     label:'Baby'     },
-  { key:'industria',label:'Industria'},
+  { key:'pe1',       label:'PE1',       color:'var(--cal-5)' },
+  { key:'pe2',       label:'PE2',       color:'var(--cal-7)' },
+  { key:'pe3',       label:'PE3',       color:'var(--cal-9)' },
+  { key:'guapita',   label:'Guapita',   color:'var(--series-3)' },
+  { key:'baby',      label:'Baby',      color:'var(--series-4)' },
+  { key:'industria', label:'Industria', color:'var(--status-critical)' },
 ];
 const FAMILIA_A = [
   ['baseCafeTolerable','Base Café Tolerable'],
@@ -646,7 +663,7 @@ CALIBRES.forEach(c => {
 });
 
 const categoriaRow = document.getElementById('categoriaRow');
-const CAT_COLOR = { primera:'var(--series-1)', guapita:'var(--series-3)', baby:'var(--series-4)', industria:'var(--status-critical)' };
+const CAT_COLOR = Object.fromEntries(CATEGORIAS.map(c => [c.key, c.color]));
 CATEGORIAS.forEach(cat => {
   const b = document.createElement('button');
   b.className = 'bigBtn'; b.type='button'; b.dataset.categoria = cat.key;
@@ -694,17 +711,20 @@ function renderSeleccion(){
 
   const warnEl = document.getElementById('warnMsg');
   const btnReg = document.getElementById('btnRegistrar');
+  const esExportacion = sesionActual && sesionActual.tipo === 'exportacion';
+  const clasificacionElegida = esExportacion ? sel.calibre : sel.categoria;
+
   let warn = '';
-  const necesitaDefecto = sel.categoria === 'industria' && sel.defectos.size === 0 && !sel.sinDefecto;
+  const necesitaDefecto = !esExportacion && sel.categoria === 'industria' && sel.defectos.size === 0 && !sel.sinDefecto;
   if (necesitaDefecto) warn = 'Industria requiere al menos un defecto';
   warnEl.textContent = warn;
 
-  const ok = sel.calibre && sel.categoria && !necesitaDefecto;
+  const ok = !!clasificacionElegida && !necesitaDefecto;
   btnReg.disabled = !ok;
 
   const partes = [];
-  partes.push(sel.calibre ? `Calibre <b>${sel.calibre}</b>` : 'Calibre —');
-  partes.push(sel.categoria ? `<b>${CATEGORIA_LABEL[sel.categoria]}</b>` : 'Categoría —');
+  if (esExportacion) partes.push(sel.calibre ? `Calibre <b>${sel.calibre}</b>` : 'Calibre —');
+  else partes.push(sel.categoria ? `<b>${CATEGORIA_LABEL[sel.categoria]}</b>` : 'Categoría —');
   if (sel.sinDefecto) partes.push('<b>Sin defecto</b>');
   else if (sel.defectos.size) partes.push(`<b>${sel.defectos.size}</b> defecto(s)`);
   document.getElementById('selPreview').innerHTML = partes.join(' · ');
@@ -720,21 +740,26 @@ async function registrarPina(){
   if (!sesionActual) return;
   const btnReg = document.getElementById('btnRegistrar');
   btnReg.disabled = true;
+  const esExportacion = sesionActual.tipo === 'exportacion';
   const snapshot = { calibre: sel.calibre, categoria: sel.categoria, defectos: [...sel.defectos], sinDefecto: sel.sinDefecto };
 
   const updates = {
     lote: sesionActual.lote, grupo: sesionActual.grupo, bloque: sesionActual.bloque,
     actualizadoEn: serverTimestamp(),
     totalFrutas: increment(1),
-    [`porCalibre.c${snapshot.calibre}`]: increment(1),
-    [`porCategoria.${snapshot.categoria}`]: increment(1),
   };
+  if (esExportacion) {
+    updates[`porCalibre.c${snapshot.calibre}`] = increment(1);
+  } else {
+    updates[`porCategoria.${snapshot.categoria}`] = increment(1);
+  }
   if (snapshot.sinDefecto) {
     updates['porDefecto.sinDefecto'] = increment(1);
   } else {
     for (const d of snapshot.defectos) {
       updates[`porDefecto.${d}`] = increment(1);
-      updates[`porCalibreDefecto.c${snapshot.calibre}.${d}`] = increment(1);
+      if (esExportacion) updates[`porCalibreDefecto.c${snapshot.calibre}.${d}`] = increment(1);
+      else updates[`porCategoriaDefecto.${snapshot.categoria}.${d}`] = increment(1);
     }
   }
   try {
@@ -752,20 +777,25 @@ async function registrarPina(){
 
 async function deshacerUltima(){
   const last = undoStack.pop();
-  if (!last) return;
+  if (!last || !sesionActual) return;
   document.getElementById('btnDeshacer').disabled = undoStack.length === 0;
+  const esExportacion = sesionActual.tipo === 'exportacion';
   const updates = {
     actualizadoEn: serverTimestamp(),
     totalFrutas: increment(-1),
-    [`porCalibre.c${last.calibre}`]: increment(-1),
-    [`porCategoria.${last.categoria}`]: increment(-1),
   };
+  if (esExportacion) {
+    updates[`porCalibre.c${last.calibre}`] = increment(-1);
+  } else {
+    updates[`porCategoria.${last.categoria}`] = increment(-1);
+  }
   if (last.sinDefecto) {
     updates['porDefecto.sinDefecto'] = increment(-1);
   } else {
     for (const d of last.defectos) {
       updates[`porDefecto.${d}`] = increment(-1);
-      updates[`porCalibreDefecto.c${last.calibre}.${d}`] = increment(-1);
+      if (esExportacion) updates[`porCalibreDefecto.c${last.calibre}.${d}`] = increment(-1);
+      else updates[`porCategoriaDefecto.${last.categoria}.${d}`] = increment(-1);
     }
   }
   try {
@@ -819,32 +849,36 @@ function pintarRecientes(){
   rs.forEach(r => {
     const d = document.createElement('button');
     d.type = 'button'; d.className = 'recienteItem';
-    d.innerHTML = `<span>Lote ${r.lote} · Grupo ${r.grupo} · Bloque ${r.bloque}</span><span class="sub">retomar →</span>`;
-    d.addEventListener('click', () => iniciarSesion(r.lote, r.grupo, r.bloque, r.muestreador||''));
+    const tipoTxt = r.tipo === 'exportacion' ? 'Exportación' : 'Nacional';
+    d.innerHTML = `<span>${tipoTxt} · Lote ${r.lote} · Grupo ${r.grupo} · Bloque ${r.bloque}</span><span class="sub">retomar →</span>`;
+    d.addEventListener('click', () => iniciarSesion(r.lote, r.grupo, r.bloque, r.muestreador||'', r.tipo));
     list.appendChild(d);
   });
 }
 
-async function iniciarSesion(lote,grupo,bloque,muestreador){
+async function iniciarSesion(lote,grupo,bloque,muestreador,tipo){
   const id = sesionId(lote,grupo,bloque);
-  sesionActual = { id, lote, grupo, bloque, muestreador };
-  saveReciente({ lote,grupo,bloque,muestreador });
+  sesionActual = { id, lote, grupo, bloque, muestreador, tipo };
+  saveReciente({ lote,grupo,bloque,muestreador,tipo });
 
   const ref = doc(db,'sesiones',id);
   const snap = await getDoc(ref).catch(() => null);
   if (!snap || !snap.exists()) {
     await setDoc(ref, {
-      lote, grupo, bloque, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp(),
-      totalFrutas: 0, porCalibre:{}, porCategoria:{}, porDefecto:{}, porCalibreDefecto:{}
+      lote, grupo, bloque, tipo, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp(),
+      totalFrutas: 0, porCalibre:{}, porCategoria:{}, porDefecto:{}, porCalibreDefecto:{}, porCategoriaDefecto:{}
     }, { merge:true }).catch((e) => showToast('✗ ' + e.message));
   }
 
+  document.getElementById('chipTipo').textContent = tipo === 'exportacion' ? 'Exportación' : 'Nacional';
   document.getElementById('chipLote').textContent = lote;
   document.getElementById('chipGrupo').textContent = grupo;
   document.getElementById('chipBloque').textContent = bloque;
   document.getElementById('sessionChip').classList.remove('hidden');
   document.getElementById('navTabs').classList.remove('hidden');
   document.getElementById('screenSesion').classList.add('hidden');
+  document.getElementById('panelCalibre').classList.toggle('hidden', tipo !== 'exportacion');
+  document.getElementById('panelCategoria').classList.toggle('hidden', tipo !== 'nacional');
 
   undoStack = [];
   document.getElementById('btnDeshacer').disabled = true;
@@ -854,14 +888,36 @@ async function iniciarSesion(lote,grupo,bloque,muestreador){
   irAMuestreo();
 }
 
+/* ---- Tipo de destino: Exportación (calibres) vs Nacional (PE1/PE2/PE3/Guapita/Baby/Industria) ---- */
+function pintarTipoSeleccion(){
+  document.querySelectorAll('#tipoRow .bigBtn').forEach(b => {
+    const on = b.dataset.tipo === tipoElegido;
+    b.dataset.selected = on;
+    b.style.background = on ? 'var(--series-1)' : '';
+  });
+  document.getElementById('tipoWarn').textContent = '';
+}
+function resetFormularioSesion(){
+  tipoElegido = null;
+  pintarTipoSeleccion();
+  document.getElementById('formSesion').reset();
+}
+document.querySelectorAll('#tipoRow .bigBtn').forEach(b => {
+  b.addEventListener('click', () => { tipoElegido = b.dataset.tipo; pintarTipoSeleccion(); });
+});
+
 document.getElementById('formSesion').addEventListener('submit', (e) => {
   e.preventDefault();
+  if (!tipoElegido) {
+    document.getElementById('tipoWarn').textContent = 'Elige Exportación o Nacional antes de iniciar.';
+    return;
+  }
   const lote = document.getElementById('inLote').value.trim();
   const grupo = document.getElementById('inGrupo').value.trim();
   const bloque = document.getElementById('inBloque').value.trim();
   const muestreador = document.getElementById('inMuestreador').value.trim();
   if (!lote || !grupo || !bloque) return;
-  iniciarSesion(lote,grupo,bloque,muestreador);
+  iniciarSesion(lote,grupo,bloque,muestreador,tipoElegido);
 });
 
 document.getElementById('btnCambiarSesion').addEventListener('click', () => {
@@ -902,7 +958,8 @@ function renderListaSesiones(){
     if (filtro && !texto.includes(filtro)) return;
     const row = document.createElement('button');
     row.type='button'; row.className = 'sesionRow' + (sesionSeleccionadaId === id ? ' active' : '');
-    row.innerHTML = `<span>Lote ${d.lote} · Grupo ${d.grupo} · Bloque ${d.bloque}</span><span class="n">${d.totalFrutas||0} 🍍</span>`;
+    const tipoTag = d.tipo === 'exportacion' ? 'EXP' : 'NAL';
+    row.innerHTML = `<span>[${tipoTag}] Lote ${d.lote} · Grupo ${d.grupo} · Bloque ${d.bloque}</span><span class="n">${d.totalFrutas||0} 🍍</span>`;
     row.addEventListener('click', () => verResultados(id));
     cont.appendChild(row);
   });
@@ -932,42 +989,46 @@ function barra(label, valor, max, color){
 function renderResultados(data){
   const cont = document.getElementById('resultadosContenido');
   const total = data.totalFrutas || 0;
-  const porCalibre = data.porCalibre || {};
-  const porCategoria = data.porCategoria || {};
+  const esExportacion = data.tipo === 'exportacion';
+  const porClasificacion = esExportacion ? (data.porCalibre || {}) : (data.porCategoria || {});
   const porDefecto = data.porDefecto || {};
-  const porCalibreDefecto = data.porCalibreDefecto || {};
+  const porClasificacionDefecto = esExportacion ? (data.porCalibreDefecto || {}) : (data.porCategoriaDefecto || {});
 
   const sinDefectoN = porDefecto.sinDefecto || 0;
   const pctSinDefecto = total ? Math.round((sinDefectoN/total)*100) : 0;
 
-  const calibreTop = CALIBRES.map(c => [c, porCalibre['c'+c]||0]).sort((a,b)=>b[1]-a[1])[0];
+  const items = esExportacion
+    ? CALIBRES.map(c => ({ key:'c'+c, label:'Calibre '+c, short:String(c), color:`var(--cal-${c})` }))
+    : CATEGORIAS.map(c => ({ key:c.key, label:c.label, short:c.label, color:c.color }));
+
+  const claseTop = items.map(it => [it, porClasificacion[it.key]||0]).sort((a,b)=>b[1]-a[1])[0];
   const defectoEntries = Object.entries(porDefecto).filter(([k]) => k !== 'sinDefecto');
   const defectoTop = defectoEntries.sort((a,b)=>b[1]-a[1])[0];
 
-  const maxCalibre = Math.max(1, ...CALIBRES.map(c => porCalibre['c'+c]||0));
-  const barsCalibre = CALIBRES.map(c => barra('Calibre '+c, porCalibre['c'+c]||0, maxCalibre, `var(--cal-${c})`)).join('');
+  const maxClasificacion = Math.max(1, ...items.map(it => porClasificacion[it.key]||0));
+  const barsClasificacion = items.map(it => barra(it.label, porClasificacion[it.key]||0, maxClasificacion, it.color)).join('');
 
-  const maxCategoria = Math.max(1, ...CATEGORIAS.map(c => porCategoria[c.key]||0));
-  const barsCategoria = CATEGORIAS.map(c => barra(c.label, porCategoria[c.key]||0, maxCategoria, CAT_COLOR[c.key])).join('');
+  const etiquetaTop = esExportacion ? 'Calibre más frecuente' : 'Categoría más frecuente';
+  const tituloClasificacion = esExportacion ? 'Por calibre' : 'Por categoría';
+  const tituloFiltro = esExportacion ? 'Todos los calibres' : 'Todas las categorías';
 
   cont.innerHTML = `
     <div class="panel">
-      <div class="panelTitle">Resumen — Lote ${data.lote} · Grupo ${data.grupo} · Bloque ${data.bloque}</div>
+      <div class="panelTitle">Resumen — ${esExportacion ? 'Exportación' : 'Nacional'} · Lote ${data.lote} · Grupo ${data.grupo} · Bloque ${data.bloque}</div>
       <div class="statTiles">
         <div class="statTile"><div class="v">${total}</div><div class="l">Piñas muestreadas</div></div>
         <div class="statTile"><div class="v">${pctSinDefecto}%</div><div class="l">Sin defecto</div></div>
-        <div class="statTile"><div class="v">${calibreTop ? calibreTop[0] : '—'}</div><div class="l">Calibre más frecuente</div></div>
+        <div class="statTile"><div class="v">${claseTop && claseTop[1] ? claseTop[0].short : '—'}</div><div class="l">${etiquetaTop}</div></div>
         <div class="statTile"><div class="v" style="font-size:15px;line-height:1.3;">${defectoTop ? DEFECTO_LABEL[defectoTop[0]] : '—'}</div><div class="l">Defecto más frecuente</div></div>
       </div>
     </div>
-    <div class="panel"><div class="panelTitle">Por calibre</div>${barsCalibre}</div>
-    <div class="panel"><div class="panelTitle">Por categoría</div>${barsCategoria}</div>
+    <div class="panel"><div class="panelTitle">${tituloClasificacion}</div>${barsClasificacion}</div>
     <div class="panel">
       <div class="rowHead">
         <div class="panelTitle" style="margin:0;">Por defecto</div>
-        <select id="filtroCalibreDef">
-          <option value="">Todos los calibres</option>
-          ${CALIBRES.map(c => `<option value="c${c}">Calibre ${c}</option>`).join('')}
+        <select id="filtroClasificacionDef">
+          <option value="">${tituloFiltro}</option>
+          ${items.map(it => `<option value="${it.key}">${it.label}</option>`).join('')}
         </select>
       </div>
       <div id="defectoBars"></div>
@@ -975,15 +1036,15 @@ function renderResultados(data){
   `;
 
   function pintarDefectos(){
-    const filtro = document.getElementById('filtroCalibreDef').value;
-    const fuente = filtro ? (porCalibreDefecto[filtro] || {}) : Object.fromEntries(defectoEntries);
+    const filtro = document.getElementById('filtroClasificacionDef').value;
+    const fuente = filtro ? (porClasificacionDefecto[filtro] || {}) : Object.fromEntries(defectoEntries);
     const entries = Object.entries(fuente).filter(([,v]) => v > 0).sort((a,b) => b[1]-a[1]);
     const max = Math.max(1, ...entries.map(([,v]) => v));
     const el = document.getElementById('defectoBars');
     if (!entries.length) { el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Sin defectos registrados en este filtro.</div>'; return; }
     el.innerHTML = entries.map(([k,v]) => barra(DEFECTO_LABEL[k]||k, v, max, 'var(--series-1)')).join('');
   }
-  document.getElementById('filtroCalibreDef').addEventListener('change', pintarDefectos);
+  document.getElementById('filtroClasificacionDef').addEventListener('change', pintarDefectos);
   pintarDefectos();
 }
 </script>
