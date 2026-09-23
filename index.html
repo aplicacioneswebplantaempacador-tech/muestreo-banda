@@ -264,6 +264,17 @@
   .rowHead select{ padding:7px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text-primary); font-size:13px; }
   #emptyResultados{ color:var(--text-muted); font-size:14px; text-align:center; padding:40px 10px; }
   img{ max-width:100%; }
+
+  .filtroFechas{ display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+  .filtroFechas .field{ margin:0; min-width:150px; flex:1 1 150px; }
+  .filtroFechas input[type="date"]{
+    width:100%; padding:10px 12px; font-size:14px; border-radius:9px;
+    border:1px solid var(--border); background:var(--surface-2); color:var(--text-primary);
+  }
+  .btnGhost{
+    border:1px solid var(--border); background:var(--surface-2); color:var(--text-primary);
+    border-radius:9px; padding:11px 16px; font-size:13.5px; font-weight:700; cursor:pointer; white-space:nowrap;
+  }
 </style>
 </head>
 <body>
@@ -340,8 +351,17 @@
 
   <!-- ===== Pantalla: resultados (visible para cualquiera, sin iniciar sesión) ===== -->
   <section id="screenResultados">
+    <div class="panel" id="panelResumenGeneral">
+      <div class="panelTitle">Resumen general</div>
+      <div class="filtroFechas">
+        <div class="field"><label for="filtroDesde">Desde</label><input type="date" id="filtroDesde"></div>
+        <div class="field"><label for="filtroHasta">Hasta</label><input type="date" id="filtroHasta"></div>
+        <button type="button" id="btnHoy" class="btnGhost">Hoy</button>
+      </div>
+      <div id="resumenGeneralContenido"></div>
+    </div>
     <div class="panel">
-      <div class="panelTitle">Sesiones</div>
+      <div class="panelTitle">Sesiones individuales</div>
       <input id="buscadorSesiones" placeholder="Buscar por lote, grupo o bloque…" style="width:100%;padding:10px 12px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-primary);font-size:13.5px;margin-bottom:10px;">
       <div id="listaSesiones"></div>
     </div>
@@ -635,6 +655,16 @@ function slug(s){
     .replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'x';
 }
 function sesionId(lote,grupo,bloque){ return `${slug(lote)}__${slug(grupo)}__${slug(bloque)}`; }
+function fechaStr(d){
+  d = d || new Date();
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}${m}${day}`; // YYYYMMDD, hora local del dispositivo
+}
+function hoyISO(){
+  const d = new Date();
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`; // para <input type="date">
+}
 function showToast(msg){
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('show');
@@ -715,11 +745,15 @@ function renderSeleccion(){
   const clasificacionElegida = esExportacion ? sel.calibre : sel.categoria;
 
   let warn = '';
-  const necesitaDefecto = !esExportacion && sel.categoria === 'industria' && sel.defectos.size === 0 && !sel.sinDefecto;
-  if (necesitaDefecto) warn = 'Industria requiere al menos un defecto';
+  const faltaDefecto = sel.defectos.size === 0 && !sel.sinDefecto;
+  if (faltaDefecto) {
+    warn = (!esExportacion && sel.categoria === 'industria')
+      ? 'Industria requiere al menos un defecto'
+      : 'Marca "Sin defecto" o al menos un defecto';
+  }
   warnEl.textContent = warn;
 
-  const ok = !!clasificacionElegida && !necesitaDefecto;
+  const ok = !!clasificacionElegida && !faltaDefecto;
   btnReg.disabled = !ok;
 
   const partes = [];
@@ -741,23 +775,29 @@ async function registrarPina(){
   const btnReg = document.getElementById('btnRegistrar');
   btnReg.disabled = true;
   const esExportacion = sesionActual.tipo === 'exportacion';
-  const snapshot = { calibre: sel.calibre, categoria: sel.categoria, defectos: [...sel.defectos], sinDefecto: sel.sinDefecto };
+  const dia = fechaStr();
+  const snapshot = { calibre: sel.calibre, categoria: sel.categoria, defectos: [...sel.defectos], sinDefecto: sel.sinDefecto, dia };
 
   const updates = {
     lote: sesionActual.lote, grupo: sesionActual.grupo, bloque: sesionActual.bloque,
     actualizadoEn: serverTimestamp(),
     totalFrutas: increment(1),
+    [`porDia.${dia}.total`]: increment(1),
   };
   if (esExportacion) {
     updates[`porCalibre.c${snapshot.calibre}`] = increment(1);
+    updates[`porDia.${dia}.porCalibre.c${snapshot.calibre}`] = increment(1);
   } else {
     updates[`porCategoria.${snapshot.categoria}`] = increment(1);
+    updates[`porDia.${dia}.porCategoria.${snapshot.categoria}`] = increment(1);
   }
   if (snapshot.sinDefecto) {
     updates['porDefecto.sinDefecto'] = increment(1);
+    updates[`porDia.${dia}.porDefecto.sinDefecto`] = increment(1);
   } else {
     for (const d of snapshot.defectos) {
       updates[`porDefecto.${d}`] = increment(1);
+      updates[`porDia.${dia}.porDefecto.${d}`] = increment(1);
       if (esExportacion) updates[`porCalibreDefecto.c${snapshot.calibre}.${d}`] = increment(1);
       else updates[`porCategoriaDefecto.${snapshot.categoria}.${d}`] = increment(1);
     }
@@ -780,20 +820,26 @@ async function deshacerUltima(){
   if (!last || !sesionActual) return;
   document.getElementById('btnDeshacer').disabled = undoStack.length === 0;
   const esExportacion = sesionActual.tipo === 'exportacion';
+  const dia = last.dia || fechaStr();
   const updates = {
     actualizadoEn: serverTimestamp(),
     totalFrutas: increment(-1),
+    [`porDia.${dia}.total`]: increment(-1),
   };
   if (esExportacion) {
     updates[`porCalibre.c${last.calibre}`] = increment(-1);
+    updates[`porDia.${dia}.porCalibre.c${last.calibre}`] = increment(-1);
   } else {
     updates[`porCategoria.${last.categoria}`] = increment(-1);
+    updates[`porDia.${dia}.porCategoria.${last.categoria}`] = increment(-1);
   }
   if (last.sinDefecto) {
     updates['porDefecto.sinDefecto'] = increment(-1);
+    updates[`porDia.${dia}.porDefecto.sinDefecto`] = increment(-1);
   } else {
     for (const d of last.defectos) {
       updates[`porDefecto.${d}`] = increment(-1);
+      updates[`porDia.${dia}.porDefecto.${d}`] = increment(-1);
       if (esExportacion) updates[`porCalibreDefecto.c${last.calibre}.${d}`] = increment(-1);
       else updates[`porCategoriaDefecto.${last.categoria}.${d}`] = increment(-1);
     }
@@ -866,7 +912,7 @@ async function iniciarSesion(lote,grupo,bloque,muestreador,tipo){
   if (!snap || !snap.exists()) {
     await setDoc(ref, {
       lote, grupo, bloque, tipo, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp(),
-      totalFrutas: 0, porCalibre:{}, porCategoria:{}, porDefecto:{}, porCalibreDefecto:{}, porCategoriaDefecto:{}
+      totalFrutas: 0, porCalibre:{}, porCategoria:{}, porDefecto:{}, porCalibreDefecto:{}, porCategoriaDefecto:{}, porDia:{}
     }, { merge:true }).catch((e) => showToast('✗ ' + e.message));
   }
 
@@ -934,15 +980,16 @@ let unsubListaSesiones = null;
 let ultimasSesionesDocs = [];
 
 function cargarListaSesiones(){
-  if (unsubListaSesiones) { renderListaSesiones(); return; } // ya suscrito, solo repintar con el filtro actual
+  if (unsubListaSesiones) { renderListaSesiones(); renderResumenGeneral(); return; } // ya suscrito, solo repintar
   const cont = document.getElementById('listaSesiones');
   cont.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Cargando…</div>';
   try {
-    const q = query(collection(db,'sesiones'), orderBy('actualizadoEn','desc'), limit(40));
+    const q = query(collection(db,'sesiones'), orderBy('actualizadoEn','desc'), limit(200));
     unsubListaSesiones = onSnapshot(q, (qs) => {
       ultimasSesionesDocs = [];
       qs.forEach(docSnap => ultimasSesionesDocs.push({ id: docSnap.id, d: docSnap.data() }));
       renderListaSesiones();
+      renderResumenGeneral();
     });
   } catch (e) {
     cont.innerHTML = '<div style="color:var(--status-critical);font-size:13px;">Error: ' + e.message + '</div>';
@@ -966,6 +1013,88 @@ function renderListaSesiones(){
   if (!cont.children.length) cont.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Sin sesiones todavía.</div>';
 }
 document.getElementById('buscadorSesiones').addEventListener('input', renderListaSesiones);
+
+/* ---------------- Resultados: resumen general (todas las sesiones, por rango de fechas) ---------------- */
+function inicializarFiltrosFecha(){
+  const hoy = hoyISO();
+  document.getElementById('filtroDesde').value = hoy;
+  document.getElementById('filtroHasta').value = hoy;
+}
+inicializarFiltrosFecha();
+document.getElementById('filtroDesde').addEventListener('change', renderResumenGeneral);
+document.getElementById('filtroHasta').addEventListener('change', renderResumenGeneral);
+document.getElementById('btnHoy').addEventListener('click', () => { inicializarFiltrosFecha(); renderResumenGeneral(); });
+
+function renderResumenGeneral(){
+  const cont = document.getElementById('resumenGeneralContenido');
+  const desdeInput = document.getElementById('filtroDesde').value;
+  const hastaInput = document.getElementById('filtroHasta').value;
+  if (!desdeInput || !hastaInput) { cont.innerHTML = ''; return; }
+  const desdeN = desdeInput.replace(/-/g,'');
+  const hastaN = hastaInput.replace(/-/g,'');
+
+  let total = 0, sinDefectoTotal = 0;
+  const porGrupo = {}, porCalibreAg = {}, porCategoriaAg = {}, porDefectoAg = {};
+
+  ultimasSesionesDocs.forEach(({d}) => {
+    const dias = d.porDia || {};
+    Object.entries(dias).forEach(([fecha, dd]) => {
+      if (fecha < desdeN || fecha > hastaN) return;
+      const t = dd.total || 0;
+      if (!t) return;
+      total += t;
+      porGrupo[d.grupo] = (porGrupo[d.grupo]||0) + t;
+      const pDef = dd.porDefecto || {};
+      sinDefectoTotal += pDef.sinDefecto || 0;
+      Object.entries(pDef).forEach(([k,v]) => { if (k !== 'sinDefecto' && v) porDefectoAg[k] = (porDefectoAg[k]||0) + v; });
+      if (d.tipo === 'exportacion') {
+        Object.entries(dd.porCalibre||{}).forEach(([k,v]) => { if (v) porCalibreAg[k] = (porCalibreAg[k]||0) + v; });
+      } else {
+        Object.entries(dd.porCategoria||{}).forEach(([k,v]) => { if (v) porCategoriaAg[k] = (porCategoriaAg[k]||0) + v; });
+      }
+    });
+  });
+
+  if (!total) {
+    cont.innerHTML = '<div id="emptyResultados">Sin muestreos registrados en este rango de fechas.</div>';
+    return;
+  }
+
+  const pctSinDefecto = Math.round((sinDefectoTotal/total)*100);
+  const gruposOrdenados = Object.entries(porGrupo).sort((a,b) => b[1]-a[1]);
+  const maxGrupo = Math.max(1, ...gruposOrdenados.map(([,v]) => v));
+  const barsGrupo = gruposOrdenados.map(([g,v]) => barra('Grupo '+g, v, maxGrupo, 'var(--series-1)')).join('');
+
+  let bloquesClasificacion = '';
+  if (Object.keys(porCalibreAg).length) {
+    const maxC = Math.max(1, ...CALIBRES.map(c => porCalibreAg['c'+c]||0));
+    const bars = CALIBRES.map(c => barra('Calibre '+c, porCalibreAg['c'+c]||0, maxC, `var(--cal-${c})`)).join('');
+    bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por calibre (Exportación)</div>${bars}</div>`;
+  }
+  if (Object.keys(porCategoriaAg).length) {
+    const maxCat = Math.max(1, ...CATEGORIAS.map(c => porCategoriaAg[c.key]||0));
+    const bars = CATEGORIAS.map(c => barra(c.label, porCategoriaAg[c.key]||0, maxCat, c.color)).join('');
+    bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por categoría (Nacional)</div>${bars}</div>`;
+  }
+
+  const defEntries = Object.entries(porDefectoAg).sort((a,b) => b[1]-a[1]).slice(0,12);
+  const maxDef = Math.max(1, ...defEntries.map(([,v]) => v));
+  const barsDef = defEntries.length
+    ? defEntries.map(([k,v]) => barra(DEFECTO_LABEL[k]||k, v, maxDef, 'var(--series-2)')).join('')
+    : '<div style="color:var(--text-muted);font-size:13px;">Sin defectos registrados en este rango.</div>';
+
+  cont.innerHTML = `
+    <div class="statTiles" style="margin-bottom:14px;">
+      <div class="statTile"><div class="v">${total}</div><div class="l">Piñas muestreadas</div></div>
+      <div class="statTile"><div class="v">${pctSinDefecto}%</div><div class="l">Sin defecto</div></div>
+      <div class="statTile"><div class="v">${gruposOrdenados.length}</div><div class="l">Grupos activos</div></div>
+      <div class="statTile"><div class="v" style="font-size:15px;line-height:1.3;">${defEntries.length ? DEFECTO_LABEL[defEntries[0][0]] : '—'}</div><div class="l">Defecto más frecuente</div></div>
+    </div>
+    <div class="panel"><div class="panelTitle">Por grupo</div>${barsGrupo}</div>
+    ${bloquesClasificacion}
+    <div class="panel"><div class="panelTitle">Por defecto (top 12)</div>${barsDef}</div>
+  `;
+}
 
 /* ---------------- Resultados: charts ---------------- */
 function verResultados(id){
