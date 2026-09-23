@@ -1,0 +1,991 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Muestreo en Banda</title>
+<style>
+  :root{
+    color-scheme: light;
+    --page:            #f9f9f7;
+    --surface:         #fcfcfb;
+    --surface-2:       #f2f1ec;
+    --text-primary:    #0b0b0b;
+    --text-secondary:  #52514e;
+    --text-muted:      #898781;
+    --grid:            #e1e0d9;
+    --border:          rgba(11,11,11,0.10);
+
+    --series-1: #2a78d6; /* azul - familia A / primera / calibre alto */
+    --series-2: #eb6834; /* naranja - familia B (daño mecánico) */
+    --series-3: #1baf7a; /* aqua - guapita */
+    --series-4: #eda100; /* amarillo - baby */
+
+    --cal-5:#86b6ef; --cal-6:#6da7ec; --cal-7:#5598e7; --cal-8:#3987e5; --cal-9:#2a78d6; --cal-10:#256abf;
+
+    --status-good: #0ca30c;
+    --status-warning: #fab219;
+    --status-critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      color-scheme: dark;
+      --page:            #0d0d0d;
+      --surface:         #1a1a19;
+      --surface-2:       #232322;
+      --text-primary:    #ffffff;
+      --text-secondary:  #c3c2b7;
+      --text-muted:      #898781;
+      --grid:            #2c2c2a;
+      --border:          rgba(255,255,255,0.10);
+
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --series-4: #c98500;
+
+      --cal-5:#86b6ef; --cal-6:#6da7ec; --cal-7:#5598e7; --cal-8:#3987e5; --cal-9:#2a78d6; --cal-10:#1c5cab;
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --page:            #0d0d0d;
+    --surface:         #1a1a19;
+    --surface-2:       #232322;
+    --text-primary:    #ffffff;
+    --text-secondary:  #c3c2b7;
+    --text-muted:      #898781;
+    --grid:            #2c2c2a;
+    --border:          rgba(255,255,255,0.10);
+
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+
+    --cal-5:#86b6ef; --cal-6:#6da7ec; --cal-7:#5598e7; --cal-8:#3987e5; --cal-9:#2a78d6; --cal-10:#1c5cab;
+  }
+
+  *{ box-sizing:border-box; }
+  html, body{ height:100%; }
+  body{
+    margin:0;
+    background:var(--page);
+    color:var(--text-primary);
+    font-family: system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  button{ font-family:inherit; }
+  button:focus-visible, input:focus-visible, select:focus-visible{
+    outline:3px solid var(--series-1); outline-offset:2px;
+  }
+  h1,h2,h3{ margin:0; text-wrap:balance; }
+  .hidden{ display:none !important; }
+
+  #app{ max-width:1180px; margin:0 auto; padding-inline:16px; padding-block:12px 90px; }
+
+  /* ---------- Topbar ---------- */
+  #topbar{
+    position:sticky; top:env(safe-area-inset-top,0px); z-index:20;
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    padding-block:10px; margin-bottom:14px; background:var(--page);
+  }
+  #topbar .brand{ font-weight:800; font-size:15px; letter-spacing:.02em; white-space:nowrap; }
+  #sessionChip{
+    display:flex; align-items:center; gap:8px; background:var(--surface);
+    border:1px solid var(--border); border-radius:999px; padding:6px 12px 6px 14px;
+    font-size:13px; color:var(--text-secondary);
+  }
+  #sessionChip b{ color:var(--text-primary); }
+  #sessionChip button{
+    border:none; background:var(--surface-2); color:var(--text-primary);
+    border-radius:999px; padding:4px 10px; font-size:12px; cursor:pointer;
+  }
+  #navTabs{ display:flex; gap:6px; margin-left:auto; }
+  #navTabs button{
+    border:1px solid var(--border); background:var(--surface); color:var(--text-secondary);
+    padding:8px 14px; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  #navTabs button.active{ background:var(--series-1); color:#fff; border-color:var(--series-1); }
+  #authDot{ width:9px; height:9px; border-radius:50%; background:var(--status-warning); flex:none; }
+  #authDot.ok{ background:var(--status-good); }
+  #authDot.err{ background:var(--status-critical); }
+  #btnSalir, #btnAbrirLogin{
+    border:1px solid var(--border); background:var(--surface); color:var(--text-secondary);
+    padding:8px 14px; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer;
+  }
+  #btnAbrirLogin{ background:var(--series-1); color:#fff; border-color:var(--series-1); }
+  #userEmail{ font-size:12.5px; color:var(--text-muted); white-space:nowrap; }
+
+  /* ---------- Modal de acceso (iniciar sesión / crear cuenta) ---------- */
+  #authModalOverlay{
+    position:fixed; inset:0; z-index:50; background:rgba(11,11,11,0.45);
+    display:flex; align-items:center; justify-content:center; padding:16px;
+  }
+  #authModalBox{
+    position:relative; width:100%; max-width:400px; background:var(--surface);
+    border:1px solid var(--border); border-radius:16px; padding:26px 22px 22px;
+    max-height:90vh; overflow-y:auto;
+  }
+  #authModalClose{
+    position:absolute; top:12px; right:12px; border:none; background:var(--surface-2);
+    color:var(--text-secondary); width:30px; height:30px; border-radius:50%; font-size:16px;
+    cursor:pointer; line-height:1;
+  }
+  #authModalBox h2{ font-size:20px; margin-bottom:4px; text-align:center; }
+  #authModalBox p.lead{ color:var(--text-secondary); font-size:13.5px; margin:0 0 18px; text-align:center; }
+  .loginError{ color:var(--status-critical); font-size:13px; font-weight:600; margin-top:10px; min-height:16px; text-align:center; }
+  .loginHint{ color:var(--text-muted); font-size:12.5px; text-align:center; margin-top:18px; }
+  .authSwitch{ text-align:center; margin-top:16px; font-size:13px; color:var(--text-secondary); }
+  .authSwitch button{ border:none; background:none; color:var(--series-1); font-weight:700; font-size:13px; cursor:pointer; padding:0 0 0 4px; }
+
+  /* ---------- Sesion screen ---------- */
+  #screenSesion{ max-width:520px; margin:40px auto; }
+  #screenSesion h1{ font-size:22px; margin-bottom:4px; }
+  #screenSesion p.lead{ color:var(--text-secondary); font-size:14px; margin:0 0 22px; }
+  .field{ margin-bottom:14px; }
+  .field label{ display:block; font-size:12px; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px; }
+  .field input, .field select{
+    width:100%; padding:14px 14px; font-size:17px; border-radius:10px;
+    border:1px solid var(--border); background:var(--surface); color:var(--text-primary);
+  }
+  .fieldRow{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+  @media (max-width:520px){ .fieldRow{ grid-template-columns:1fr; } }
+  .btnPrimary{
+    width:100%; padding:16px; font-size:17px; font-weight:700; border:none; border-radius:12px;
+    background:var(--series-1); color:#fff; cursor:pointer; margin-top:6px;
+  }
+  .btnPrimary:disabled{ opacity:.5; cursor:not-allowed; }
+  #recientesBox{ margin-top:26px; }
+  #recientesBox h3{ font-size:13px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px; }
+  .recienteItem{
+    display:flex; justify-content:space-between; align-items:center; width:100%;
+    padding:12px 14px; margin-bottom:8px; border-radius:10px; border:1px solid var(--border);
+    background:var(--surface); cursor:pointer; font-size:14px; color:var(--text-primary);
+  }
+  .recienteItem span.sub{ color:var(--text-muted); font-size:12px; }
+
+  /* ---------- Muestreo screen ---------- */
+  .panel{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    padding:14px; margin-bottom:14px;
+  }
+  .panelTitle{ font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px; }
+
+  .grid6{ display:grid; grid-template-columns:repeat(6,1fr); gap:8px; }
+  .grid4{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  @media (max-width:640px){ .grid6{ grid-template-columns:repeat(3,1fr);} .grid4{ grid-template-columns:repeat(2,1fr);} }
+
+  .bigBtn{
+    border:2px solid var(--border); background:var(--surface-2); color:var(--text-primary);
+    border-radius:12px; padding:16px 6px; font-size:17px; font-weight:800; cursor:pointer;
+    min-height:64px; transition:transform .06s ease;
+  }
+  .bigBtn:active{ transform:scale(.96); }
+  .bigBtn[data-selected="true"]{ color:#fff; border-color:transparent; }
+
+  .familias{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:760px){ .familias{ grid-template-columns:1fr; } }
+  .familiaBox{ border-radius:12px; padding:10px; }
+  .familiaBox.a{ background:color-mix(in srgb, var(--series-1) 7%, var(--surface)); border:1px solid color-mix(in srgb, var(--series-1) 30%, var(--border)); }
+  .familiaBox.b{ background:color-mix(in srgb, var(--series-2) 7%, var(--surface)); border:1px solid color-mix(in srgb, var(--series-2) 30%, var(--border)); }
+  .familiaBox h4{ font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); margin:2px 2px 8px; }
+  .defGrid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(128px,1fr)); gap:6px; }
+  .defBtn{
+    border:1.5px solid var(--border); background:var(--surface); color:var(--text-primary);
+    border-radius:9px; padding:9px 8px; font-size:12.5px; font-weight:600; line-height:1.2;
+    cursor:pointer; text-align:left; min-height:46px;
+  }
+  .defBtn[data-selected="true"].a{ background:var(--series-1); border-color:var(--series-1); color:#fff; }
+  .defBtn[data-selected="true"].b{ background:var(--series-2); border-color:var(--series-2); color:#fff; }
+
+  #btnSinDefecto{
+    width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:2px solid var(--status-good);
+    background:var(--surface); color:var(--status-good); font-weight:800; font-size:14px; cursor:pointer;
+  }
+  #btnSinDefecto[data-selected="true"]{ background:var(--status-good); color:#fff; }
+
+  /* action bar */
+  #actionBar{
+    position:fixed; left:0; right:0; bottom:0; z-index:30;
+    background:var(--surface); border-top:1px solid var(--border);
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));
+  }
+  #actionBarInner{ max-width:1180px; margin:0 auto; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  #selPreview{ font-size:12.5px; color:var(--text-secondary); flex:1 1 220px; min-width:0; }
+  #selPreview b{ color:var(--text-primary); }
+  #warnMsg{ color:var(--status-critical); font-weight:700; font-size:12.5px; }
+  #btnDeshacer{
+    border:1px solid var(--border); background:var(--surface-2); color:var(--text-primary);
+    padding:14px 16px; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer;
+  }
+  #btnRegistrar{
+    border:none; background:var(--status-good); color:#fff; padding:16px 26px; border-radius:12px;
+    font-size:17px; font-weight:800; cursor:pointer; flex:1 1 180px;
+  }
+  #btnRegistrar:disabled{ opacity:.4; cursor:not-allowed; }
+  #counterTotal{ font-size:13px; font-weight:700; color:var(--text-secondary); white-space:nowrap; }
+
+  #toast{
+    position:fixed; left:50%; bottom:100px; transform:translateX(-50%) translateY(10px);
+    background:var(--text-primary); color:var(--page); padding:10px 18px; border-radius:999px;
+    font-size:13px; font-weight:700; opacity:0; pointer-events:none; transition:opacity .18s, transform .18s;
+    z-index:40;
+  }
+  #toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  /* ---------- Resultados screen ---------- */
+  #buscadorSesiones{ margin-bottom:10px; }
+  #listaSesiones{ display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto; }
+  .sesionRow{
+    display:flex; justify-content:space-between; align-items:center; padding:10px 12px;
+    border:1px solid var(--border); border-radius:10px; background:var(--surface-2); cursor:pointer; font-size:13.5px;
+  }
+  .sesionRow.active{ border-color:var(--series-1); background:color-mix(in srgb, var(--series-1) 10%, var(--surface-2)); }
+  .sesionRow .n{ color:var(--text-muted); font-variant-numeric:tabular-nums; }
+
+  .statTiles{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  @media (max-width:640px){ .statTiles{ grid-template-columns:repeat(2,1fr); } }
+  .statTile{ background:var(--surface-2); border-radius:12px; padding:14px; }
+  .statTile .v{ font-size:26px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .statTile .l{ font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; margin-top:2px; }
+
+  .barRow{ display:grid; grid-template-columns:110px 1fr 52px; align-items:center; gap:10px; margin-bottom:7px; }
+  .barRow .lab{ font-size:12.5px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .barTrack{ background:var(--grid); border-radius:5px; height:16px; overflow:hidden; }
+  .barFill{ height:100%; border-radius:5px 0 0 5px; }
+  .barRow .val{ font-size:12.5px; font-weight:700; text-align:right; font-variant-numeric:tabular-nums; }
+
+  .rowHead{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:10px; flex-wrap:wrap; }
+  .rowHead select{ padding:7px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text-primary); font-size:13px; }
+  #emptyResultados{ color:var(--text-muted); font-size:14px; text-align:center; padding:40px 10px; }
+  img{ max-width:100%; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <header id="topbar">
+    <span class="brand">🍍 Muestreo en Banda</span>
+    <span id="authDot" title="Estado de conexión"></span>
+    <span id="userEmail"></span>
+    <button id="btnSalir" type="button" class="hidden">Cerrar sesión</button>
+    <button id="btnAbrirLogin" type="button">Iniciar sesión</button>
+    <span id="sessionChip" class="hidden">
+      <span>Lote <b id="chipLote"></b> · Grupo <b id="chipGrupo"></b> · Bloque <b id="chipBloque"></b></span>
+      <button id="btnCambiarSesion" type="button">Cambiar</button>
+    </span>
+    <nav id="navTabs" class="hidden">
+      <button id="navMuestreo" type="button">Muestreo</button>
+      <button id="navResultados" type="button" class="active">Resultados</button>
+    </nav>
+  </header>
+
+  <!-- ===== Pantalla: iniciar sesión de muestreo ===== -->
+  <section id="screenSesion" class="hidden">
+    <h1>Nueva sesión de muestreo</h1>
+    <p class="lead">Registra lote, grupo y bloque una sola vez. Luego calificas piña por piña sin volver a escribir nada.</p>
+    <form id="formSesion">
+      <div class="fieldRow">
+        <div class="field"><label for="inLote">Lote</label><input id="inLote" required autocomplete="off" placeholder="Ej. 4521"></div>
+        <div class="field"><label for="inGrupo">Grupo</label><input id="inGrupo" required autocomplete="off" placeholder="Ej. 12"></div>
+        <div class="field"><label for="inBloque">Bloque</label><input id="inBloque" required autocomplete="off" placeholder="Ej. B3"></div>
+      </div>
+      <div class="field"><label for="inMuestreador">Muestreador (opcional)</label><input id="inMuestreador" autocomplete="off" placeholder="Tu nombre"></div>
+      <button class="btnPrimary" type="submit" id="btnIniciar">Iniciar muestreo</button>
+    </form>
+    <div id="recientesBox" class="hidden">
+      <h3>Retomar sesión reciente</h3>
+      <div id="recientesList"></div>
+    </div>
+  </section>
+
+  <!-- ===== Pantalla: muestreo rápido ===== -->
+  <section id="screenMuestreo" class="hidden">
+    <div class="panel">
+      <div class="panelTitle">Calibre</div>
+      <div class="grid6" id="calibreRow"></div>
+    </div>
+    <div class="panel">
+      <div class="panelTitle">Categoría</div>
+      <div class="grid4" id="categoriaRow"></div>
+    </div>
+    <div class="panel">
+      <div class="panelTitle">Defectos (puedes marcar varios)</div>
+      <button id="btnSinDefecto" type="button">✓ Sin defecto</button>
+      <div class="familias">
+        <div class="familiaBox a">
+          <h4>Base · Corona · Cuello · Daño externo</h4>
+          <div class="defGrid" id="familiaA"></div>
+        </div>
+        <div class="familiaBox b">
+          <h4>Daño mecánico · Ambiental · Sanitario</h4>
+          <div class="defGrid" id="familiaB"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Pantalla: resultados (visible para cualquiera, sin iniciar sesión) ===== -->
+  <section id="screenResultados">
+    <div class="panel">
+      <div class="panelTitle">Sesiones</div>
+      <input id="buscadorSesiones" placeholder="Buscar por lote, grupo o bloque…" style="width:100%;padding:10px 12px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-primary);font-size:13.5px;margin-bottom:10px;">
+      <div id="listaSesiones"></div>
+    </div>
+    <div id="resultadosContenido">
+      <div id="emptyResultados">Elige una sesión arriba para ver sus resultados en tiempo real.</div>
+    </div>
+  </section>
+
+  <div id="toast"></div>
+</div>
+
+<!-- ===== Barra de acción fija (muestreo) ===== -->
+<div id="actionBar" class="hidden">
+  <div id="actionBarInner">
+    <div id="selPreview">Toca calibre y categoría para empezar.</div>
+    <div id="warnMsg"></div>
+    <button id="btnDeshacer" type="button" disabled>↺ Deshacer</button>
+    <button id="btnRegistrar" type="button" disabled>Registrar piña</button>
+    <div id="counterTotal">0 piñas</div>
+  </div>
+</div>
+
+<!-- ===== Modal: iniciar sesión / crear cuenta (solo para quien va a muestrear) ===== -->
+<div id="authModalOverlay" class="hidden">
+  <div id="authModalBox" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
+    <button id="authModalClose" type="button" aria-label="Cerrar">×</button>
+    <h2 id="authModalTitle">Iniciar sesión</h2>
+    <p class="lead" id="authModalLead">Entra con tu correo y contraseña para hacer muestreos.</p>
+    <form id="formAuth">
+      <div class="field"><label for="authEmail">Correo</label><input id="authEmail" type="email" required autocomplete="username" placeholder="tucorreo@ejemplo.com"></div>
+      <div class="field"><label for="authPassword">Contraseña</label><input id="authPassword" type="password" required autocomplete="current-password" placeholder="••••••••"></div>
+      <div class="field hidden" id="fieldConfirmPassword"><label for="authPassword2">Confirmar contraseña</label><input id="authPassword2" type="password" autocomplete="new-password" placeholder="••••••••"></div>
+      <button class="btnPrimary" type="submit" id="btnAuthSubmit">Entrar</button>
+      <div class="loginError" id="authError"></div>
+    </form>
+    <div class="authSwitch">
+      <span id="authSwitchText">¿No tienes cuenta?</span>
+      <button type="button" id="btnAuthSwitchMode">Créala aquí</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.2/app/+esm";
+import {
+  getFirestore, doc, getDoc, setDoc, onSnapshot,
+  collection, query, orderBy, limit, increment, serverTimestamp
+} from "https://cdn.jsdelivr.net/npm/firebase@10.12.2/firestore/+esm";
+import {
+  getAuth, setPersistence, browserLocalPersistence,
+  signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged
+} from "https://cdn.jsdelivr.net/npm/firebase@10.12.2/auth/+esm";
+
+/* ---------------- Firebase ---------------- */
+const firebaseConfig = {
+  apiKey: "AIzaSyBb4XGm7vXnH5ob0qiowVOLu9gtFRfLm5g",
+  authDomain: "guapa-muestreo-banda.firebaseapp.com",
+  projectId: "guapa-muestreo-banda",
+  storageBucket: "guapa-muestreo-banda.firebasestorage.app",
+  messagingSenderId: "145200997582",
+  appId: "1:145200997582:web:0c1729c4de847f93955c9f"
+};
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+const auth = getAuth(fbApp);
+
+/* ---------------- Estado (declarado antes de usarse en los listeners de abajo) ---------------- */
+let sesionActual = null; // {id, lote, grupo, bloque, muestreador}
+let sel = { calibre:null, categoria:null, defectos:new Set(), sinDefecto:false };
+let undoStack = [];
+let unsubResultados = null;
+let unsubContador = null;
+
+/* ---------------- Autenticación (correo y contraseña) ---------------- */
+const authDot = document.getElementById('authDot');
+const btnSalir = document.getElementById('btnSalir');
+const btnAbrirLogin = document.getElementById('btnAbrirLogin');
+const userEmailEl = document.getElementById('userEmail');
+const screenSesion = document.getElementById('screenSesion');
+const screenMuestreo = document.getElementById('screenMuestreo');
+const screenResultados = document.getElementById('screenResultados');
+const navTabsEl = document.getElementById('navTabs');
+
+const authModalOverlay = document.getElementById('authModalOverlay');
+const authModalTitle = document.getElementById('authModalTitle');
+const authModalLead = document.getElementById('authModalLead');
+const fieldConfirmPassword = document.getElementById('fieldConfirmPassword');
+const btnAuthSubmit = document.getElementById('btnAuthSubmit');
+const authSwitchText = document.getElementById('authSwitchText');
+const btnAuthSwitchMode = document.getElementById('btnAuthSwitchMode');
+const authError = document.getElementById('authError');
+
+setPersistence(auth, browserLocalPersistence).catch(() => {});
+
+/* ---- Mostrar / ocultar pantallas según si hay sesión iniciada ---- */
+function mostrarPantallaResultadosPublica(){
+  screenResultados.classList.remove('hidden');
+  screenSesion.classList.add('hidden');
+  screenMuestreo.classList.add('hidden');
+  document.getElementById('actionBar').classList.add('hidden');
+  document.getElementById('navMuestreo').classList.remove('active');
+  document.getElementById('navResultados').classList.add('active');
+  cargarListaSesiones();
+}
+function mostrarPantallaSesion(){
+  screenResultados.classList.add('hidden');
+  screenMuestreo.classList.add('hidden');
+  document.getElementById('actionBar').classList.add('hidden');
+  screenSesion.classList.remove('hidden');
+  document.getElementById('navMuestreo').classList.add('active');
+  document.getElementById('navResultados').classList.remove('active');
+  pintarRecientes();
+}
+
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    authDot.classList.add('ok'); authDot.classList.remove('err');
+    authDot.title = 'Conectado: ' + user.email;
+    userEmailEl.textContent = user.email;
+    btnSalir.classList.remove('hidden');
+    btnAbrirLogin.classList.add('hidden');
+    navTabsEl.classList.remove('hidden');
+    closeAuthModal();
+    if (!sesionActual) mostrarPantallaSesion();
+  } else {
+    authDot.classList.remove('ok');
+    userEmailEl.textContent = '';
+    btnSalir.classList.add('hidden');
+    btnAbrirLogin.classList.remove('hidden');
+    navTabsEl.classList.add('hidden');
+    document.getElementById('sessionChip').classList.add('hidden');
+    document.getElementById('actionBar').classList.add('hidden');
+    if (unsubContador) { unsubContador(); unsubContador = null; }
+    sesionActual = null;
+    mostrarPantallaResultadosPublica();
+  }
+});
+
+/* ---- Modal: abrir / cerrar / cambiar de modo (login <-> crear cuenta) ---- */
+let authMode = 'login';
+function openAuthModal(mode){
+  setAuthMode(mode || 'login');
+  authModalOverlay.classList.remove('hidden');
+  document.getElementById('authEmail').focus();
+}
+function closeAuthModal(){
+  authModalOverlay.classList.add('hidden');
+  document.getElementById('formAuth').reset();
+  authError.textContent = '';
+}
+function setAuthMode(mode){
+  authMode = mode;
+  authError.textContent = '';
+  if (mode === 'signup') {
+    authModalTitle.textContent = 'Crear cuenta';
+    authModalLead.textContent = 'Crea tu acceso con tu correo y una contraseña para hacer muestreos.';
+    fieldConfirmPassword.classList.remove('hidden');
+    btnAuthSubmit.textContent = 'Crear cuenta';
+    authSwitchText.textContent = '¿Ya tienes cuenta?';
+    btnAuthSwitchMode.textContent = 'Inicia sesión';
+  } else {
+    authModalTitle.textContent = 'Iniciar sesión';
+    authModalLead.textContent = 'Entra con tu correo y contraseña para hacer muestreos.';
+    fieldConfirmPassword.classList.add('hidden');
+    btnAuthSubmit.textContent = 'Entrar';
+    authSwitchText.textContent = '¿No tienes cuenta?';
+    btnAuthSwitchMode.textContent = 'Créala aquí';
+  }
+}
+btnAbrirLogin.addEventListener('click', () => openAuthModal('login'));
+document.getElementById('authModalClose').addEventListener('click', closeAuthModal);
+authModalOverlay.addEventListener('click', (e) => { if (e.target === authModalOverlay) closeAuthModal(); });
+btnAuthSwitchMode.addEventListener('click', () => setAuthMode(authMode === 'login' ? 'signup' : 'login'));
+btnSalir.addEventListener('click', () => signOut(auth));
+
+function mensajeErrorLogin(code){
+  switch (code) {
+    case 'auth/invalid-email': return 'Correo inválido.';
+    case 'auth/user-not-found':
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential': return 'Correo o contraseña incorrectos.';
+    case 'auth/too-many-requests': return 'Demasiados intentos. Espera un momento e intenta de nuevo.';
+    case 'auth/user-disabled': return 'Esta cuenta está deshabilitada.';
+    case 'auth/weak-password': return 'La contraseña debe tener al menos 6 caracteres.';
+    default: return 'No se pudo completar la operación. Intenta de nuevo.';
+  }
+}
+
+document.getElementById('formAuth').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('authEmail').value.trim();
+  const pass = document.getElementById('authPassword').value;
+  authError.textContent = '';
+
+  if (authMode === 'signup') {
+    const pass2 = document.getElementById('authPassword2').value;
+    if (pass.length < 6) {
+      authError.textContent = 'La contraseña debe tener al menos 6 caracteres.';
+      return;
+    }
+    if (pass !== pass2) {
+      authError.textContent = 'Las contraseñas no coinciden.';
+      return;
+    }
+  }
+
+  btnAuthSubmit.disabled = true;
+  btnAuthSubmit.textContent = authMode === 'signup' ? 'Creando cuenta…' : 'Entrando…';
+  try {
+    if (authMode === 'signup') {
+      await createUserWithEmailAndPassword(auth, email, pass);
+    } else {
+      await signInWithEmailAndPassword(auth, email, pass);
+    }
+    // onAuthStateChanged se encarga de cerrar el modal y mostrar la app.
+  } catch (err) {
+    if (authMode === 'signup' && err.code === 'auth/email-already-in-use') {
+      authError.textContent = 'Ese correo ya tiene una cuenta. Inicia sesión en vez de crearla.';
+      setAuthMode('login');
+    } else {
+      authError.textContent = mensajeErrorLogin(err.code);
+    }
+  } finally {
+    btnAuthSubmit.disabled = false;
+    btnAuthSubmit.textContent = authMode === 'signup' ? 'Crear cuenta' : 'Entrar';
+  }
+});
+
+/* ---------------- Datos de referencia ---------------- */
+const CALIBRES = [5,6,7,8,9,10];
+const CATEGORIAS = [
+  { key:'primera',  label:'Primera'  },
+  { key:'guapita',  label:'Guapita'  },
+  { key:'baby',     label:'Baby'     },
+  { key:'industria',label:'Industria'},
+];
+const FAMILIA_A = [
+  ['baseCafeTolerable','Base Café Tolerable'],
+  ['baseCafeNoTolerable','Base Café No Tolerable'],
+  ['cicatriz','Cicatriz'],
+  ['cochinillaExterna','Cochinilla Externa'],
+  ['conica','Cónica'],
+  ['corchosis','Corchosis'],
+  ['coronaGrande','Corona Grande'],
+  ['coronaMaltratada','Corona Maltratada'],
+  ['coronaPequena','Corona Pequeña'],
+  ['coronaQuemada','Corona Quemada'],
+  ['coronaTorcidaTolerable','Corona Torcida Tolerable'],
+  ['coronaTorcidaNoTolerable','Corona Torcida No Tolerable'],
+  ['coronasMultiples','Coronas Múltiples'],
+  ['cuelloTolerable','Cuello Tolerable'],
+  ['cuelloNoTolerable','Cuello No Tolerable'],
+  ['danoAnimales','Daño Animales'],
+  ['danoInsectos','Daño Insectos'],
+  ['frutaSucia','Fruta Sucia'],
+].map(([key,label]) => ({key,label}));
+const FAMILIA_B = [
+  ['danoMecanico','Daño Mecánico'],
+  ['deforme','Deforme'],
+  ['frutaConGolpe','Fruta con Golpe'],
+  ['gomosis','Gomosis'],
+  ['pedunculoViejo','Pedúnculo Viejo'],
+  ['pedunculoHumedoAcuoso','Pedúnculo Húmedo Acuoso'],
+  ['quemaSolTolerable','Quema de Sol Tolerable'],
+  ['quemaSolNoTolerable','Quema de Sol No Tolerable'],
+  ['sobremadura','Sobremadura'],
+  ['offColorTolerable','Off-Color Tolerable'],
+  ['offColorNoTolerable','Off-Color No Tolerable'],
+  ['cochinillaInterna','Cochinilla Interna'],
+  ['enfermedad','Enfermedad'],
+  ['golpeAguaLeve','Golpe de Agua Leve'],
+  ['golpeAguaSevero','Golpe de Agua Severo'],
+  ['gomosisInterna','Gomosis Interna'],
+  ['levadura','Levadura'],
+].map(([key,label]) => ({key,label}));
+const TODOS_DEFECTOS = [...FAMILIA_A, ...FAMILIA_B];
+const DEFECTO_LABEL = Object.fromEntries(TODOS_DEFECTOS.map(d => [d.key, d.label]));
+const CATEGORIA_LABEL = Object.fromEntries(CATEGORIAS.map(c => [c.key, c.label]));
+
+/* ---------------- Utilidades ---------------- */
+const ACENTOS = { 'á':'a','é':'e','í':'i','ó':'o','ú':'u','ñ':'n','ü':'u' };
+function quitarAcentos(s){
+  return s.replace(/[áéíóúñü]/g, ch => ACENTOS[ch] || ch);
+}
+function slug(s){
+  return quitarAcentos((s||'').toString().trim().toLowerCase())
+    .replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'x';
+}
+function sesionId(lote,grupo,bloque){ return `${slug(lote)}__${slug(grupo)}__${slug(bloque)}`; }
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(showToast._h);
+  showToast._h = setTimeout(() => t.classList.remove('show'), 1400);
+}
+function loadRecientes(){
+  try { return JSON.parse(localStorage.getItem('muestreoBanda.recientes')||'[]'); } catch { return []; }
+}
+function saveReciente(s){
+  try {
+    let r = loadRecientes().filter(x => sesionId(x.lote,x.grupo,x.bloque) !== sesionId(s.lote,s.grupo,s.bloque));
+    r.unshift(s);
+    localStorage.setItem('muestreoBanda.recientes', JSON.stringify(r.slice(0,5)));
+  } catch {}
+}
+
+/* ---------------- Render botones fijos ---------------- */
+const calibreRow = document.getElementById('calibreRow');
+CALIBRES.forEach(c => {
+  const b = document.createElement('button');
+  b.className = 'bigBtn'; b.type='button'; b.textContent = c; b.dataset.calibre = c;
+  b.style.setProperty('--sel-color', `var(--cal-${c})`);
+  b.addEventListener('click', () => { sel.calibre = c; renderSeleccion(); });
+  calibreRow.appendChild(b);
+});
+
+const categoriaRow = document.getElementById('categoriaRow');
+const CAT_COLOR = { primera:'var(--series-1)', guapita:'var(--series-3)', baby:'var(--series-4)', industria:'var(--status-critical)' };
+CATEGORIAS.forEach(cat => {
+  const b = document.createElement('button');
+  b.className = 'bigBtn'; b.type='button'; b.dataset.categoria = cat.key;
+  b.textContent = cat.key === 'industria' ? '⚠ Industria' : cat.label;
+  b.style.setProperty('--sel-color', CAT_COLOR[cat.key]);
+  b.addEventListener('click', () => { sel.categoria = cat.key; renderSeleccion(); });
+  categoriaRow.appendChild(b);
+});
+
+function renderDefFamilia(container, familia, famClass){
+  familia.forEach(d => {
+    const b = document.createElement('button');
+    b.className = 'defBtn ' + famClass; b.type='button'; b.textContent = d.label; b.dataset.def = d.key;
+    b.addEventListener('click', () => {
+      sel.sinDefecto = false;
+      if (sel.defectos.has(d.key)) sel.defectos.delete(d.key); else sel.defectos.add(d.key);
+      renderSeleccion();
+    });
+    container.appendChild(b);
+  });
+}
+renderDefFamilia(document.getElementById('familiaA'), FAMILIA_A, 'a');
+renderDefFamilia(document.getElementById('familiaB'), FAMILIA_B, 'b');
+
+document.getElementById('btnSinDefecto').addEventListener('click', () => {
+  sel.sinDefecto = !sel.sinDefecto;
+  if (sel.sinDefecto) sel.defectos.clear();
+  renderSeleccion();
+});
+
+/* ---------------- Selección visual + validación ---------------- */
+function renderSeleccion(){
+  document.querySelectorAll('#calibreRow .bigBtn').forEach(b => {
+    const on = Number(b.dataset.calibre) === sel.calibre;
+    b.dataset.selected = on; b.style.background = on ? 'var(--sel-color)' : '';
+  });
+  document.querySelectorAll('#categoriaRow .bigBtn').forEach(b => {
+    const on = b.dataset.categoria === sel.categoria;
+    b.dataset.selected = on; b.style.background = on ? 'var(--sel-color)' : '';
+  });
+  document.querySelectorAll('.defBtn').forEach(b => {
+    b.dataset.selected = sel.defectos.has(b.dataset.def);
+  });
+  document.getElementById('btnSinDefecto').dataset.selected = sel.sinDefecto;
+
+  const warnEl = document.getElementById('warnMsg');
+  const btnReg = document.getElementById('btnRegistrar');
+  let warn = '';
+  const necesitaDefecto = sel.categoria === 'industria' && sel.defectos.size === 0 && !sel.sinDefecto;
+  if (necesitaDefecto) warn = 'Industria requiere al menos un defecto';
+  warnEl.textContent = warn;
+
+  const ok = sel.calibre && sel.categoria && !necesitaDefecto;
+  btnReg.disabled = !ok;
+
+  const partes = [];
+  partes.push(sel.calibre ? `Calibre <b>${sel.calibre}</b>` : 'Calibre —');
+  partes.push(sel.categoria ? `<b>${CATEGORIA_LABEL[sel.categoria]}</b>` : 'Categoría —');
+  if (sel.sinDefecto) partes.push('<b>Sin defecto</b>');
+  else if (sel.defectos.size) partes.push(`<b>${sel.defectos.size}</b> defecto(s)`);
+  document.getElementById('selPreview').innerHTML = partes.join(' · ');
+}
+
+function limpiarSeleccion(){
+  sel = { calibre:null, categoria:null, defectos:new Set(), sinDefecto:false };
+  renderSeleccion();
+}
+
+/* ---------------- Registrar / deshacer ---------------- */
+async function registrarPina(){
+  if (!sesionActual) return;
+  const btnReg = document.getElementById('btnRegistrar');
+  btnReg.disabled = true;
+  const snapshot = { calibre: sel.calibre, categoria: sel.categoria, defectos: [...sel.defectos], sinDefecto: sel.sinDefecto };
+
+  const updates = {
+    lote: sesionActual.lote, grupo: sesionActual.grupo, bloque: sesionActual.bloque,
+    actualizadoEn: serverTimestamp(),
+    totalFrutas: increment(1),
+    [`porCalibre.c${snapshot.calibre}`]: increment(1),
+    [`porCategoria.${snapshot.categoria}`]: increment(1),
+  };
+  if (snapshot.sinDefecto) {
+    updates['porDefecto.sinDefecto'] = increment(1);
+  } else {
+    for (const d of snapshot.defectos) {
+      updates[`porDefecto.${d}`] = increment(1);
+      updates[`porCalibreDefecto.c${snapshot.calibre}.${d}`] = increment(1);
+    }
+  }
+  try {
+    await setDoc(doc(db,'sesiones',sesionActual.id), updates, { merge:true });
+    undoStack.push(snapshot);
+    if (undoStack.length > 30) undoStack.shift();
+    document.getElementById('btnDeshacer').disabled = false;
+    showToast('✓ Piña registrada');
+    limpiarSeleccion();
+  } catch (e) {
+    showToast('✗ Error al guardar: ' + e.message);
+    btnReg.disabled = false;
+  }
+}
+
+async function deshacerUltima(){
+  const last = undoStack.pop();
+  if (!last) return;
+  document.getElementById('btnDeshacer').disabled = undoStack.length === 0;
+  const updates = {
+    actualizadoEn: serverTimestamp(),
+    totalFrutas: increment(-1),
+    [`porCalibre.c${last.calibre}`]: increment(-1),
+    [`porCategoria.${last.categoria}`]: increment(-1),
+  };
+  if (last.sinDefecto) {
+    updates['porDefecto.sinDefecto'] = increment(-1);
+  } else {
+    for (const d of last.defectos) {
+      updates[`porDefecto.${d}`] = increment(-1);
+      updates[`porCalibreDefecto.c${last.calibre}.${d}`] = increment(-1);
+    }
+  }
+  try {
+    await setDoc(doc(db,'sesiones',sesionActual.id), updates, { merge:true });
+    showToast('↺ Última piña deshecha');
+  } catch (e) {
+    showToast('✗ Error al deshacer: ' + e.message);
+  }
+}
+
+document.getElementById('btnRegistrar').addEventListener('click', registrarPina);
+document.getElementById('btnDeshacer').addEventListener('click', deshacerUltima);
+
+/* ---------------- Contador total en vivo ---------------- */
+function suscribirContador(id){
+  return onSnapshot(doc(db,'sesiones',id), (snap) => {
+    const data = snap.data();
+    document.getElementById('counterTotal').textContent = `${data?.totalFrutas || 0} piñas`;
+  });
+}
+
+/* ---------------- Navegación entre pantallas ---------------- */
+function irAMuestreo(){
+  document.getElementById('screenMuestreo').classList.remove('hidden');
+  document.getElementById('screenResultados').classList.add('hidden');
+  document.getElementById('actionBar').classList.remove('hidden');
+  document.getElementById('navMuestreo').classList.add('active');
+  document.getElementById('navResultados').classList.remove('active');
+}
+function irAResultados(){
+  document.getElementById('screenMuestreo').classList.add('hidden');
+  document.getElementById('screenResultados').classList.remove('hidden');
+  document.getElementById('actionBar').classList.add('hidden');
+  document.getElementById('navMuestreo').classList.remove('active');
+  document.getElementById('navResultados').classList.add('active');
+  cargarListaSesiones();
+}
+document.getElementById('navMuestreo').addEventListener('click', () => {
+  if (sesionActual) irAMuestreo(); else mostrarPantallaSesion();
+});
+document.getElementById('navResultados').addEventListener('click', irAResultados);
+
+/* ---------------- Iniciar / cambiar sesión de muestreo ---------------- */
+function pintarRecientes(){
+  const rs = loadRecientes();
+  const box = document.getElementById('recientesBox');
+  const list = document.getElementById('recientesList');
+  list.innerHTML = '';
+  if (!rs.length) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  rs.forEach(r => {
+    const d = document.createElement('button');
+    d.type = 'button'; d.className = 'recienteItem';
+    d.innerHTML = `<span>Lote ${r.lote} · Grupo ${r.grupo} · Bloque ${r.bloque}</span><span class="sub">retomar →</span>`;
+    d.addEventListener('click', () => iniciarSesion(r.lote, r.grupo, r.bloque, r.muestreador||''));
+    list.appendChild(d);
+  });
+}
+
+async function iniciarSesion(lote,grupo,bloque,muestreador){
+  const id = sesionId(lote,grupo,bloque);
+  sesionActual = { id, lote, grupo, bloque, muestreador };
+  saveReciente({ lote,grupo,bloque,muestreador });
+
+  const ref = doc(db,'sesiones',id);
+  const snap = await getDoc(ref).catch(() => null);
+  if (!snap || !snap.exists()) {
+    await setDoc(ref, {
+      lote, grupo, bloque, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp(),
+      totalFrutas: 0, porCalibre:{}, porCategoria:{}, porDefecto:{}, porCalibreDefecto:{}
+    }, { merge:true }).catch((e) => showToast('✗ ' + e.message));
+  }
+
+  document.getElementById('chipLote').textContent = lote;
+  document.getElementById('chipGrupo').textContent = grupo;
+  document.getElementById('chipBloque').textContent = bloque;
+  document.getElementById('sessionChip').classList.remove('hidden');
+  document.getElementById('navTabs').classList.remove('hidden');
+  document.getElementById('screenSesion').classList.add('hidden');
+
+  undoStack = [];
+  document.getElementById('btnDeshacer').disabled = true;
+  limpiarSeleccion();
+  if (unsubContador) unsubContador();
+  unsubContador = suscribirContador(id);
+  irAMuestreo();
+}
+
+document.getElementById('formSesion').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const lote = document.getElementById('inLote').value.trim();
+  const grupo = document.getElementById('inGrupo').value.trim();
+  const bloque = document.getElementById('inBloque').value.trim();
+  const muestreador = document.getElementById('inMuestreador').value.trim();
+  if (!lote || !grupo || !bloque) return;
+  iniciarSesion(lote,grupo,bloque,muestreador);
+});
+
+document.getElementById('btnCambiarSesion').addEventListener('click', () => {
+  if (unsubContador) { unsubContador(); unsubContador = null; }
+  sesionActual = null;
+  document.getElementById('sessionChip').classList.add('hidden');
+  document.getElementById('formSesion').reset();
+  mostrarPantallaSesion();
+});
+
+/* ---------------- Resultados: lista de sesiones ---------------- */
+let sesionSeleccionadaId = null;
+let unsubListaSesiones = null;
+let ultimasSesionesDocs = [];
+
+function cargarListaSesiones(){
+  if (unsubListaSesiones) { renderListaSesiones(); return; } // ya suscrito, solo repintar con el filtro actual
+  const cont = document.getElementById('listaSesiones');
+  cont.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Cargando…</div>';
+  try {
+    const q = query(collection(db,'sesiones'), orderBy('actualizadoEn','desc'), limit(40));
+    unsubListaSesiones = onSnapshot(q, (qs) => {
+      ultimasSesionesDocs = [];
+      qs.forEach(docSnap => ultimasSesionesDocs.push({ id: docSnap.id, d: docSnap.data() }));
+      renderListaSesiones();
+    });
+  } catch (e) {
+    cont.innerHTML = '<div style="color:var(--status-critical);font-size:13px;">Error: ' + e.message + '</div>';
+  }
+}
+
+function renderListaSesiones(){
+  const cont = document.getElementById('listaSesiones');
+  const filtro = document.getElementById('buscadorSesiones').value.trim().toLowerCase();
+  cont.innerHTML = '';
+  ultimasSesionesDocs.forEach(({id, d}) => {
+    const texto = `${d.lote} ${d.grupo} ${d.bloque}`.toLowerCase();
+    if (filtro && !texto.includes(filtro)) return;
+    const row = document.createElement('button');
+    row.type='button'; row.className = 'sesionRow' + (sesionSeleccionadaId === id ? ' active' : '');
+    row.innerHTML = `<span>Lote ${d.lote} · Grupo ${d.grupo} · Bloque ${d.bloque}</span><span class="n">${d.totalFrutas||0} 🍍</span>`;
+    row.addEventListener('click', () => verResultados(id));
+    cont.appendChild(row);
+  });
+  if (!cont.children.length) cont.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Sin sesiones todavía.</div>';
+}
+document.getElementById('buscadorSesiones').addEventListener('input', renderListaSesiones);
+
+/* ---------------- Resultados: charts ---------------- */
+function verResultados(id){
+  sesionSeleccionadaId = id;
+  if (unsubResultados) unsubResultados();
+  unsubResultados = onSnapshot(doc(db,'sesiones',id), (snap) => {
+    if (snap.exists()) renderResultados(snap.data());
+  });
+  renderListaSesiones();
+}
+
+function barra(label, valor, max, color){
+  const pct = max > 0 ? Math.max(2, Math.round((valor/max)*100)) : 0;
+  return `<div class="barRow">
+    <div class="lab" title="${label}">${label}</div>
+    <div class="barTrack"><div class="barFill" style="width:${pct}%;background:${color}"></div></div>
+    <div class="val">${valor}</div>
+  </div>`;
+}
+
+function renderResultados(data){
+  const cont = document.getElementById('resultadosContenido');
+  const total = data.totalFrutas || 0;
+  const porCalibre = data.porCalibre || {};
+  const porCategoria = data.porCategoria || {};
+  const porDefecto = data.porDefecto || {};
+  const porCalibreDefecto = data.porCalibreDefecto || {};
+
+  const sinDefectoN = porDefecto.sinDefecto || 0;
+  const pctSinDefecto = total ? Math.round((sinDefectoN/total)*100) : 0;
+
+  const calibreTop = CALIBRES.map(c => [c, porCalibre['c'+c]||0]).sort((a,b)=>b[1]-a[1])[0];
+  const defectoEntries = Object.entries(porDefecto).filter(([k]) => k !== 'sinDefecto');
+  const defectoTop = defectoEntries.sort((a,b)=>b[1]-a[1])[0];
+
+  const maxCalibre = Math.max(1, ...CALIBRES.map(c => porCalibre['c'+c]||0));
+  const barsCalibre = CALIBRES.map(c => barra('Calibre '+c, porCalibre['c'+c]||0, maxCalibre, `var(--cal-${c})`)).join('');
+
+  const maxCategoria = Math.max(1, ...CATEGORIAS.map(c => porCategoria[c.key]||0));
+  const barsCategoria = CATEGORIAS.map(c => barra(c.label, porCategoria[c.key]||0, maxCategoria, CAT_COLOR[c.key])).join('');
+
+  cont.innerHTML = `
+    <div class="panel">
+      <div class="panelTitle">Resumen — Lote ${data.lote} · Grupo ${data.grupo} · Bloque ${data.bloque}</div>
+      <div class="statTiles">
+        <div class="statTile"><div class="v">${total}</div><div class="l">Piñas muestreadas</div></div>
+        <div class="statTile"><div class="v">${pctSinDefecto}%</div><div class="l">Sin defecto</div></div>
+        <div class="statTile"><div class="v">${calibreTop ? calibreTop[0] : '—'}</div><div class="l">Calibre más frecuente</div></div>
+        <div class="statTile"><div class="v" style="font-size:15px;line-height:1.3;">${defectoTop ? DEFECTO_LABEL[defectoTop[0]] : '—'}</div><div class="l">Defecto más frecuente</div></div>
+      </div>
+    </div>
+    <div class="panel"><div class="panelTitle">Por calibre</div>${barsCalibre}</div>
+    <div class="panel"><div class="panelTitle">Por categoría</div>${barsCategoria}</div>
+    <div class="panel">
+      <div class="rowHead">
+        <div class="panelTitle" style="margin:0;">Por defecto</div>
+        <select id="filtroCalibreDef">
+          <option value="">Todos los calibres</option>
+          ${CALIBRES.map(c => `<option value="c${c}">Calibre ${c}</option>`).join('')}
+        </select>
+      </div>
+      <div id="defectoBars"></div>
+    </div>
+  `;
+
+  function pintarDefectos(){
+    const filtro = document.getElementById('filtroCalibreDef').value;
+    const fuente = filtro ? (porCalibreDefecto[filtro] || {}) : Object.fromEntries(defectoEntries);
+    const entries = Object.entries(fuente).filter(([,v]) => v > 0).sort((a,b) => b[1]-a[1]);
+    const max = Math.max(1, ...entries.map(([,v]) => v));
+    const el = document.getElementById('defectoBars');
+    if (!entries.length) { el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Sin defectos registrados en este filtro.</div>'; return; }
+    el.innerHTML = entries.map(([k,v]) => barra(DEFECTO_LABEL[k]||k, v, max, 'var(--series-1)')).join('');
+  }
+  document.getElementById('filtroCalibreDef').addEventListener('change', pintarDefectos);
+  pintarDefectos();
+}
+</script>
+</body>
+</html>
