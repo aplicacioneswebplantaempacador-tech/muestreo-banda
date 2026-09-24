@@ -1215,7 +1215,6 @@ function renderResumenGeneral(){
   const desdeN = desdeInput.replace(/-/g,'');
   const hastaN = hastaInput.replace(/-/g,'');
   const grupoFiltro = document.getElementById('filtroGrupo').value;
-  const etiquetaGrupo = grupoFiltro ? `Grupo ${grupoFiltro}` : 'Todos los grupos';
 
   let total = 0, sinDefectoTotal = 0;
   const porGrupo = {}, porCalibreAg = {}, porCategoriaAg = {}, porDefectoAg = {};
@@ -1262,6 +1261,9 @@ function renderResumenGeneral(){
 
   const pctSinDefecto = Math.round((sinDefectoTotal/total)*100);
   const gruposOrdenados = Object.entries(porGrupo).sort((a,b) => b[1]-a[1]);
+  const etiquetaGrupo = grupoFiltro
+    ? `Grupo ${grupoFiltro}`
+    : gruposOrdenados.map(([g,v]) => `Grupo ${g} (${Math.round((v/total)*100)}%)`).join(' · ');
 
   let bloquesClasificacion = '';
   if (Object.keys(porCalibreAg).length) {
@@ -1279,14 +1281,12 @@ function renderResumenGeneral(){
       <div class="statTile"><div class="v">${gruposOrdenados.length}</div><div class="l">Grupos activos</div></div>
       ${paretoTextoHTML(Object.entries(porDefectoAg))}
     </div>
-    <div class="panel"><div class="panelTitle">Por grupo — ${etiquetaGrupo}</div><div id="barGrupo"></div></div>
     ${bloquesClasificacion}
     ${totalDefectosSum ? `<div class="panel"><div class="panelTitle">Defectos — ${etiquetaGrupo}</div><div id="barDefecto"></div></div>` : ''}
     ${Object.keys(porCategoriaDefectoAg).length ? `<div class="panel"><div class="panelTitle">Defectos por categoría — dónde sale más cada uno — ${etiquetaGrupo}</div><div id="rankingCategoriaDefecto"></div></div>` : ''}
     ${Object.keys(porCalibreDefectoAg).length ? `<div class="panel"><div class="panelTitle">Defectos por calibre — dónde sale más cada uno — ${etiquetaGrupo}</div><div id="rankingCalibreDefecto"></div></div>` : ''}
   `;
 
-  renderBarChart(document.getElementById('barGrupo'), gruposOrdenados.map(([g,v]) => ({ label:'Grupo '+g, value:v, pct: Math.round((v/total)*100) })));
   if (Object.keys(porCalibreAg).length) {
     renderBarChart(document.getElementById('barCalibre'), CALIBRES.map(c => { const v = porCalibreAg['c'+c]||0; return { label:'Calibre '+c, value:v, pct: Math.round((v/total)*100), color:`var(--cal-${c})` }; }));
   }
