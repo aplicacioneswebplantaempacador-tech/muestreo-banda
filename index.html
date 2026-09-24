@@ -289,15 +289,10 @@
   .chartScroll svg{ display:block; }
   .chartSvg text{ font-family:inherit; fill:var(--text-secondary); }
   .chartSvg .axisLine{ stroke:var(--grid); stroke-width:1; }
-  .chartSvg .refLine{ stroke:var(--text-muted); stroke-width:1; stroke-dasharray:3 3; }
-  .chartSvg .barMark{ fill:var(--series-2); cursor:pointer; }
-  .chartSvg .barMark:hover, .chartSvg .barMark.hover{ fill:color-mix(in srgb, var(--series-2) 85%, black 15%); }
-  .chartSvg .lineMark{ fill:none; stroke:var(--series-1); stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
-  .chartSvg .lineDot{ fill:var(--series-1); stroke:var(--surface); stroke-width:2; cursor:pointer; }
-  .chartSvg .lineDot:hover, .chartSvg .lineDot.hover{ fill:color-mix(in srgb, var(--series-1) 85%, black 15%); }
+  .chartSvg .barMark{ fill:var(--series-2); cursor:pointer; transition:filter .1s; }
+  .chartSvg .barMark:hover, .chartSvg .barMark.hover{ filter:brightness(0.85); }
   .chartSvg .axisLabel{ font-size:10.5px; fill:var(--text-muted); }
   .chartSvg .valueLabel{ font-size:11px; font-weight:700; fill:var(--text-primary); }
-  .chartSvg .calloutLabel{ font-size:11px; font-weight:700; fill:var(--series-1); }
 
   #chartTooltip{
     position:fixed; z-index:60; pointer-events:none; background:var(--text-primary); color:var(--page);
@@ -1148,11 +1143,12 @@ function renderResumenGeneral(){
 
   let bloquesClasificacion = '';
   if (Object.keys(porCalibreAg).length) {
-    bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por calibre (Exportación) — ${etiquetaGrupo}</div><div id="lineCalibre"></div></div>`;
+    bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por calibre (Exportación) — ${etiquetaGrupo}</div><div id="barCalibre"></div></div>`;
   }
   if (Object.keys(porCategoriaAg).length) {
-    bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por categoría (Nacional) — ${etiquetaGrupo}</div><div id="lineCategoria"></div></div>`;
+    bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por categoría (Nacional) — ${etiquetaGrupo}</div><div id="barCategoria"></div></div>`;
   }
+  const totalDefectosSum = Object.values(porDefectoAg).reduce((s,v) => s+v, 0);
 
   cont.innerHTML = `
     <div class="statTiles" style="margin-bottom:14px;">
@@ -1161,18 +1157,24 @@ function renderResumenGeneral(){
       <div class="statTile"><div class="v">${gruposOrdenados.length}</div><div class="l">Grupos activos</div></div>
       ${paretoTextoHTML(Object.entries(porDefectoAg))}
     </div>
-    <div class="panel"><div class="panelTitle">Por grupo — ${etiquetaGrupo}</div><div id="lineGrupo"></div></div>
+    <div class="panel"><div class="panelTitle">Por grupo — ${etiquetaGrupo}</div><div id="barGrupo"></div></div>
     ${bloquesClasificacion}
+    ${totalDefectosSum ? `<div class="panel"><div class="panelTitle">Defectos — ${etiquetaGrupo}</div><div id="barDefecto"></div></div>` : ''}
     ${Object.keys(porCategoriaDefectoAg).length ? `<div class="panel"><div class="panelTitle">Defectos por categoría — dónde sale más cada uno — ${etiquetaGrupo}</div><div id="rankingCategoriaDefecto"></div></div>` : ''}
     ${Object.keys(porCalibreDefectoAg).length ? `<div class="panel"><div class="panelTitle">Defectos por calibre — dónde sale más cada uno — ${etiquetaGrupo}</div><div id="rankingCalibreDefecto"></div></div>` : ''}
   `;
 
-  renderLineChart(document.getElementById('lineGrupo'), gruposOrdenados.map(([g,v]) => ({ label:'Grupo '+g, value:v })));
+  renderBarChart(document.getElementById('barGrupo'), gruposOrdenados.map(([g,v]) => ({ label:'Grupo '+g, value:v, pct: Math.round((v/total)*100) })));
   if (Object.keys(porCalibreAg).length) {
-    renderLineChart(document.getElementById('lineCalibre'), CALIBRES.map(c => ({ label:'Calibre '+c, value: porCalibreAg['c'+c]||0, color:`var(--cal-${c})` })));
+    renderBarChart(document.getElementById('barCalibre'), CALIBRES.map(c => { const v = porCalibreAg['c'+c]||0; return { label:'Calibre '+c, value:v, pct: Math.round((v/total)*100), color:`var(--cal-${c})` }; }));
   }
   if (Object.keys(porCategoriaAg).length) {
-    renderLineChart(document.getElementById('lineCategoria'), CATEGORIAS.map(c => ({ label:c.label, value: porCategoriaAg[c.key]||0, color:c.color })));
+    renderBarChart(document.getElementById('barCategoria'), CATEGORIAS.map(c => { const v = porCategoriaAg[c.key]||0; return { label:c.label, value:v, pct: Math.round((v/total)*100), color:c.color }; }));
+  }
+  if (totalDefectosSum) {
+    const puntosDefecto = Object.entries(porDefectoAg).sort((a,b) => b[1]-a[1])
+      .map(([k,v]) => ({ label: DEFECTO_LABEL[k]||k, value:v, pct: Math.round((v/totalDefectosSum)*100) }));
+    renderBarChart(document.getElementById('barDefecto'), puntosDefecto, { colorPunto:'var(--series-2)' });
   }
   if (Object.keys(porCategoriaDefectoAg).length) {
     const itemsCat = CATEGORIAS.map(c => ({ key:c.key, label:c.label, color:c.color }));
@@ -1231,7 +1233,8 @@ function mostrarTooltip(evt, filas){
 }
 function ocultarTooltip(){ chartTooltipEl.classList.remove('show'); }
 
-/* ---------------- Gráfica de línea genérica (Por grupo / Por calibre / Por categoría) ---------------- */
+/* ---------------- Gráfica de barras genérica (Por grupo / Por calibre / Por categoría / Defectos) ---------------- */
+/* Cada barra: cantidad + % arriba, etiqueta abajo (rotada). puntos: [{label, value, pct, color}] */
 function niceCeil(v){
   if (v <= 5) return 5;
   const mag = Math.pow(10, Math.floor(Math.log10(v)));
@@ -1239,19 +1242,18 @@ function niceCeil(v){
   const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
   return nice * mag;
 }
-function renderLineChart(container, puntos, opts){
+function renderBarChart(container, puntos, opts){
   opts = opts || {};
-  const colorLinea = opts.colorLinea || 'var(--text-muted)';
-  const colorPuntoDefault = opts.colorPunto || 'var(--series-1)';
+  const colorDefault = opts.colorPunto || 'var(--series-2)';
   if (!puntos.length || !puntos.some(p => p.value)) {
     container.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Sin datos en este rango.</div>';
     return;
   }
-  const niceMax = niceCeil(Math.max(1, ...puntos.map(p => p.value)));
-  const gap = 50, marginL = 40, marginR = 16, marginT = 20, marginB = 84, plotH = 180;
-  const w = marginL + marginR + Math.max(1, puntos.length-1)*gap + 24;
+  const niceMax = niceCeil(Math.max(1, ...puntos.map(p => p.value)) * 1.18);
+  const barW = 36, gap = 22, marginL = 40, marginR = 16, marginT = 26, marginB = 84, plotH = 190;
+  const w = marginL + marginR + puntos.length*(barW+gap);
   const h = marginT + plotH + marginB;
-  const xAt = i => puntos.length === 1 ? w/2 : (marginL + 12 + i*gap);
+  const xAt = i => marginL + i*(barW+gap) + gap/2;
   const yFor = v => marginT + plotH - (v/niceMax)*plotH;
   const steps = 4;
 
@@ -1259,29 +1261,32 @@ function renderLineChart(container, puntos, opts){
     <line class="axisLine" x1="${marginL-6}" x2="${w-marginR}" y1="${yFor(v)}" y2="${yFor(v)}" />
     <text class="axisLabel" x="${marginL-10}" y="${yFor(v)+3}" text-anchor="end">${v}</text>
   `).join('');
-  const linePts = puntos.map((p,i) => `${xAt(i)},${yFor(p.value)}`).join(' ');
-  const dots = puntos.map((p,i) => `<circle class="lineDot" data-i="${i}" cx="${xAt(i)}" cy="${yFor(p.value)}" r="4" style="fill:${p.color||colorPuntoDefault}"/>`).join('');
+  const bars = puntos.map((p,i) => {
+    const bx = xAt(i), by = yFor(p.value), bh = Math.max(1, (marginT+plotH) - by);
+    return `<rect class="barMark" data-i="${i}" x="${bx}" y="${by}" width="${barW}" height="${bh}" rx="4" ry="4" style="fill:${p.color||colorDefault}"/>`;
+  }).join('');
+  const valueLabels = puntos.map((p,i) => {
+    const lx = xAt(i)+barW/2, ly = yFor(p.value)-8;
+    const pctTxt = (p.pct === undefined || p.pct === null) ? '' : ` (${p.pct}%)`;
+    return `<text class="valueLabel" x="${lx}" y="${ly}" text-anchor="middle">${p.value}${pctTxt}</text>`;
+  }).join('');
   const xLabels = puntos.map((p,i) => {
-    const lx = xAt(i), ly = marginT+plotH+14;
-    const txt = p.label.length > 16 ? p.label.slice(0,15)+'…' : p.label;
+    const lx = xAt(i)+barW/2, ly = marginT+plotH+14;
+    const txt = p.label.length > 18 ? p.label.slice(0,17)+'…' : p.label;
     return `<text class="axisLabel" x="${lx}" y="${ly}" text-anchor="end" transform="rotate(-40 ${lx} ${ly})">${txt}</text>`;
   }).join('');
-  const maxIdx = puntos.reduce((best,p,i,arr) => p.value > arr[best].value ? i : best, 0);
-  const maxLabel = `<text class="valueLabel" x="${xAt(maxIdx)}" y="${yFor(puntos[maxIdx].value)-9}" text-anchor="middle">${puntos[maxIdx].value}</text>`;
 
   container.innerHTML = `
     <div class="chartScroll">
       <svg class="chartSvg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" style="min-width:${w}px;">
-        ${gridLines}
-        <polyline class="lineMark" points="${linePts}" style="stroke:${colorLinea}" />
-        ${dots}${xLabels}${maxLabel}
+        ${gridLines}${bars}${valueLabels}${xLabels}
       </svg>
     </div>
   `;
 
-  container.querySelectorAll('.lineDot').forEach(el => {
+  container.querySelectorAll('.barMark').forEach(el => {
     const p = puntos[+el.dataset.i];
-    const abrir = (evt) => { el.classList.add('hover'); mostrarTooltip(evt, [{color: p.color||colorPuntoDefault, label:p.label, value:p.value}]); };
+    const abrir = (evt) => { el.classList.add('hover'); mostrarTooltip(evt, [{color: p.color||colorDefault, label:p.label, value: p.pct!==undefined ? `${p.value} (${p.pct}%)` : p.value}]); };
     el.addEventListener('pointerenter', abrir);
     el.addEventListener('pointermove', posicionarTooltip);
     el.addEventListener('pointerdown', abrir);
