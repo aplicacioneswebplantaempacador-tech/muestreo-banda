@@ -872,7 +872,7 @@ CALIBRES.forEach(c => {
   const b = document.createElement('button');
   b.className = 'bigBtn'; b.type='button'; b.textContent = c; b.dataset.calibre = c;
   b.style.setProperty('--sel-color', `var(--cal-${c})`);
-  b.addEventListener('click', () => { sel.calibre = c; renderSeleccion(); });
+  b.addEventListener('click', () => { sel.calibre = c; sel.defectos.delete('bajoPeso'); renderSeleccion(); });
   calibreRow.appendChild(b);
 });
 
@@ -883,7 +883,7 @@ CATEGORIAS.forEach(cat => {
   b.className = 'bigBtn'; b.type='button'; b.dataset.categoria = cat.key;
   b.textContent = cat.key === 'industria' ? '⚠ Industria' : cat.label;
   b.style.setProperty('--sel-color', CAT_COLOR[cat.key]);
-  b.addEventListener('click', () => { sel.categoria = cat.key; renderSeleccion(); });
+  b.addEventListener('click', () => { sel.categoria = cat.key; sel.defectos.delete('bajoPeso'); renderSeleccion(); });
   categoriaRow.appendChild(b);
 });
 
@@ -893,6 +893,7 @@ function renderDefFamilia(container, familia, famClass){
     b.className = 'defBtn ' + famClass; b.type='button'; b.textContent = d.label; b.dataset.def = d.key;
     b.addEventListener('click', () => {
       sel.sinDefecto = false;
+      sel.defectos.delete('bajoPeso');
       if (sel.defectos.has(d.key)) sel.defectos.delete(d.key); else sel.defectos.add(d.key);
       renderSeleccion();
     });
@@ -908,12 +909,17 @@ document.getElementById('btnSinDefecto').addEventListener('click', () => {
   renderSeleccion();
 });
 
-/* "Bajo Peso" es, para efectos de registro y reportes, un defecto más (queda
-   para descarte automático) — por eso se marca/desmarca igual que un botón
-   de la grilla de defectos, solo que aparte para acceso rápido de un toque. */
+/* "Bajo Peso" no es una categoría ni un calibre — es fruta tan pequeña que no
+   clasifica en nada, así que es rechazo automático. Por eso es excluyente con
+   Calibre/Categoría (se limpian al elegirlo) y no requiere clasificación para
+   habilitar "Registrar piña": solo así se puede ver cuánta fruta no aprovechable
+   por bajo peso hay, aparte de las categorías normales. */
 document.getElementById('btnBajoPeso').addEventListener('click', () => {
+  const yaActivo = sel.defectos.has('bajoPeso');
   sel.sinDefecto = false;
-  if (sel.defectos.has('bajoPeso')) sel.defectos.delete('bajoPeso'); else sel.defectos.add('bajoPeso');
+  sel.calibre = null;
+  sel.categoria = null;
+  sel.defectos = yaActivo ? new Set() : new Set(['bajoPeso']);
   renderSeleccion();
 });
 
@@ -936,25 +942,31 @@ function renderSeleccion(){
   const warnEl = document.getElementById('warnMsg');
   const btnReg = document.getElementById('btnRegistrar');
   const esExportacion = sesionActual && sesionActual.tipo === 'exportacion';
+  const esBajoPeso = sel.defectos.has('bajoPeso');
   const clasificacionElegida = esExportacion ? sel.calibre : sel.categoria;
 
   let warn = '';
   const faltaDefecto = sel.defectos.size === 0 && !sel.sinDefecto;
-  if (faltaDefecto) {
+  if (!esBajoPeso && faltaDefecto) {
     warn = (!esExportacion && sel.categoria === 'industria')
       ? 'Industria requiere al menos un defecto'
       : 'Marca "Sin defecto" o al menos un defecto';
   }
   warnEl.textContent = warn;
 
-  const ok = !!clasificacionElegida && !faltaDefecto;
+  // Bajo Peso no necesita calibre ni categoría: es rechazo automático, no clasifica en nada.
+  const ok = esBajoPeso || (!!clasificacionElegida && !faltaDefecto);
   btnReg.disabled = !ok;
 
   const partes = [];
-  if (esExportacion) partes.push(sel.calibre ? `Calibre <b>${sel.calibre}</b>` : 'Calibre —');
-  else partes.push(sel.categoria ? `<b>${CATEGORIA_LABEL[sel.categoria]}</b>` : 'Categoría —');
-  if (sel.sinDefecto) partes.push('<b>Sin defecto</b>');
-  else if (sel.defectos.size) partes.push(`<b>${sel.defectos.size}</b> defecto(s)`);
+  if (esBajoPeso) {
+    partes.push('<b>Bajo Peso</b> (rechazo, sin categoría)');
+  } else {
+    if (esExportacion) partes.push(sel.calibre ? `Calibre <b>${sel.calibre}</b>` : 'Calibre —');
+    else partes.push(sel.categoria ? `<b>${CATEGORIA_LABEL[sel.categoria]}</b>` : 'Categoría —');
+    if (sel.sinDefecto) partes.push('<b>Sin defecto</b>');
+    else if (sel.defectos.size) partes.push(`<b>${sel.defectos.size}</b> defecto(s)`);
+  }
   document.getElementById('selPreview').innerHTML = partes.join(' · ');
 }
 
