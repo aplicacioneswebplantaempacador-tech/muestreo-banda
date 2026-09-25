@@ -234,11 +234,15 @@
   .defBtn[data-selected="true"].a{ background:var(--series-1); border-color:var(--series-1); color:#fff; }
   .defBtn[data-selected="true"].b{ background:var(--series-2); border-color:var(--series-2); color:#fff; }
 
-  #btnSinDefecto{
-    width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:2px solid var(--status-good);
-    background:var(--surface); color:var(--status-good); font-weight:800; font-size:14px; cursor:pointer;
+  .quickPickRow{ display:flex; gap:8px; margin-bottom:10px; }
+  #btnSinDefecto, #btnBajoPeso{
+    flex:1 1 0; padding:12px; border-radius:10px;
+    background:var(--surface); font-weight:800; font-size:14px; cursor:pointer;
   }
+  #btnSinDefecto{ border:2px solid var(--status-good); color:var(--status-good); }
   #btnSinDefecto[data-selected="true"]{ background:var(--status-good); color:#fff; }
+  #btnBajoPeso{ border:2px solid var(--status-warning); color:var(--status-warning); }
+  #btnBajoPeso[data-selected="true"]{ background:var(--status-warning); color:#2a1e00; }
 
   /* action bar */
   #actionBar{
@@ -312,25 +316,29 @@
   body.fitScreen #screenMuestreo #panelCalibre,
   body.fitScreen #screenMuestreo #panelCategoria{ flex:0 0 auto; }
   body.fitScreen #screenMuestreo #panelCalibre .bigBtn,
-  body.fitScreen #screenMuestreo #panelCategoria .bigBtn{ min-height:36px; padding:4px 2px; font-size:11.5px; }
+  body.fitScreen #screenMuestreo #panelCategoria .bigBtn{ min-height:30px; padding:3px 2px; font-size:11px; }
   /* Categoría (Nacional) siempre en una sola fila de 6, incluso en celulares angostos */
-  body.fitScreen #screenMuestreo #categoriaRow{ grid-template-columns:repeat(6,1fr); gap:3px; }
-  body.fitScreen #screenMuestreo #calibreRow{ gap:3px; }
+  body.fitScreen #screenMuestreo #categoriaRow{ grid-template-columns:repeat(6,1fr); gap:2px; }
+  body.fitScreen #screenMuestreo #calibreRow{ gap:2px; }
   body.fitScreen #screenMuestreo #tipoWarn{ min-height:0; }
 
   body.fitScreen #screenMuestreo #panelDefectos{
     flex:1 1 auto; min-height:0; display:flex; flex-direction:column; overflow:hidden;
   }
-  body.fitScreen #screenMuestreo #panelDefectos #btnSinDefecto{
-    padding:6px; margin-bottom:4px; font-size:12px;
+  body.fitScreen #screenMuestreo #panelDefectos .quickPickRow{ gap:4px; margin-bottom:3px; }
+  body.fitScreen #screenMuestreo #panelDefectos #btnSinDefecto,
+  body.fitScreen #screenMuestreo #panelDefectos #btnBajoPeso{
+    padding:5px; font-size:11px;
   }
   body.fitScreen #screenMuestreo #panelDefectos .familias{
-    flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; gap:6px;
+    flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; gap:4px;
   }
-  body.fitScreen #screenMuestreo #panelDefectos .familiaBox{ padding:5px; }
-  body.fitScreen #screenMuestreo #panelDefectos .familiaBox h4{ margin:0 2px 4px; font-size:9.5px; }
-  body.fitScreen #screenMuestreo #panelDefectos .defGrid{ gap:3px; }
-  body.fitScreen #screenMuestreo #panelDefectos .defBtn{ min-height:32px; padding:4px 5px; font-size:10.5px; }
+  body.fitScreen #screenMuestreo #panelDefectos .familiaBox{ padding:4px; }
+  body.fitScreen #screenMuestreo #panelDefectos .familiaBox h4{ margin:0 2px 3px; font-size:9px; }
+  body.fitScreen #screenMuestreo #panelDefectos .defGrid{
+    gap:2px; grid-template-columns:repeat(auto-fill,minmax(96px,1fr));
+  }
+  body.fitScreen #screenMuestreo #panelDefectos .defBtn{ min-height:26px; padding:3px 4px; font-size:9.5px; line-height:1.1; }
 
   /* Barra de acción también un poco más compacta */
   body.fitScreen #actionBar{ padding:5px 10px calc(5px + env(safe-area-inset-bottom,0px)); }
@@ -350,8 +358,8 @@
 
   @media (min-width:700px){
     body.fitScreen #screenMuestreo #panelCalibre .bigBtn,
-    body.fitScreen #screenMuestreo #panelCategoria .bigBtn{ min-height:32px; font-size:11px; padding:3px 2px; }
-    body.fitScreen #screenMuestreo #panelDefectos .defBtn{ min-height:30px; font-size:10px; padding:3px 5px; }
+    body.fitScreen #screenMuestreo #panelCategoria .bigBtn{ min-height:28px; font-size:10.5px; padding:2px 2px; }
+    body.fitScreen #screenMuestreo #panelDefectos .defBtn{ min-height:24px; font-size:9px; padding:2px 3px; }
     body.fitScreen #screenMuestreo .panelTitle{ font-size:9.5px; }
     body.fitScreen #btnRegistrar{ padding:6px 12px; font-size:12.5px; }
     body.fitScreen #btnDeshacer{ padding:5px 8px; font-size:10.5px; }
@@ -486,7 +494,10 @@
     </div>
     <div class="panel" id="panelDefectos">
       <div class="panelTitle">Defectos (puedes marcar varios)</div>
-      <button id="btnSinDefecto" type="button">✓ Sin defecto</button>
+      <div class="quickPickRow">
+        <button id="btnSinDefecto" type="button">✓ Sin defecto</button>
+        <button id="btnBajoPeso" type="button">⚠ Bajo Peso</button>
+      </div>
       <div class="familias">
         <div class="familiaBox a">
           <h4>Base · Corona · Cuello · Daño externo</h4>
@@ -808,6 +819,7 @@ const FAMILIA_B = [
 ].map(([key,label]) => ({key,label}));
 const TODOS_DEFECTOS = [...FAMILIA_A, ...FAMILIA_B];
 const DEFECTO_LABEL = Object.fromEntries(TODOS_DEFECTOS.map(d => [d.key, d.label]));
+DEFECTO_LABEL.bajoPeso = 'Bajo Peso'; // acceso rápido aparte de las familias — ver botón #btnBajoPeso
 const CATEGORIA_LABEL = Object.fromEntries(CATEGORIAS.map(c => [c.key, c.label]));
 
 /* ---------------- Utilidades ---------------- */
@@ -896,6 +908,15 @@ document.getElementById('btnSinDefecto').addEventListener('click', () => {
   renderSeleccion();
 });
 
+/* "Bajo Peso" es, para efectos de registro y reportes, un defecto más (queda
+   para descarte automático) — por eso se marca/desmarca igual que un botón
+   de la grilla de defectos, solo que aparte para acceso rápido de un toque. */
+document.getElementById('btnBajoPeso').addEventListener('click', () => {
+  sel.sinDefecto = false;
+  if (sel.defectos.has('bajoPeso')) sel.defectos.delete('bajoPeso'); else sel.defectos.add('bajoPeso');
+  renderSeleccion();
+});
+
 /* ---------------- Selección visual + validación ---------------- */
 function renderSeleccion(){
   document.querySelectorAll('#calibreRow .bigBtn').forEach(b => {
@@ -910,6 +931,7 @@ function renderSeleccion(){
     b.dataset.selected = sel.defectos.has(b.dataset.def);
   });
   document.getElementById('btnSinDefecto').dataset.selected = sel.sinDefecto;
+  document.getElementById('btnBajoPeso').dataset.selected = sel.defectos.has('bajoPeso');
 
   const warnEl = document.getElementById('warnMsg');
   const btnReg = document.getElementById('btnRegistrar');
