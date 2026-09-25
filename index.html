@@ -190,7 +190,10 @@
     padding:12px 14px; margin-bottom:8px; border-radius:10px; border:1px solid var(--border);
     background:var(--surface); cursor:pointer; font-size:14px; color:var(--text-primary);
   }
-  .recienteItem span.sub{ color:var(--text-muted); font-size:12px; }
+  .recienteItem span.label{
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1 1 auto; margin-right:8px;
+  }
+  .recienteItem span.sub{ color:var(--text-muted); font-size:12px; flex:0 0 auto; }
 
   /* ---------- Muestreo screen ---------- */
   .panel{
@@ -291,10 +294,14 @@
     justify-content:flex-start; /* respaldo: si no hay espacio, nunca corta el título de arriba */
     justify-content:safe center; /* en navegadores que lo soportan: centra solo si cabe entero */
   }
-  body.fitScreen #screenSesion h1{ font-size:19px; }
-  body.fitScreen #screenSesion p.lead{ margin-bottom:14px; }
-  body.fitScreen #screenSesion .field{ margin-bottom:10px; }
-  body.fitScreen #screenSesion #tipoRow .bigBtn{ min-height:56px; padding:10px 6px; }
+  body.fitScreen #screenSesion h1{ font-size:17px; margin-bottom:4px; }
+  body.fitScreen #screenSesion p.lead{ margin-bottom:10px; font-size:12.5px; }
+  body.fitScreen #screenSesion .field{ margin-bottom:8px; }
+  body.fitScreen #screenSesion #tipoRow .bigBtn{ min-height:50px; padding:8px 6px; }
+  body.fitScreen #recientesBox{ margin-top:14px; }
+  body.fitScreen #recientesBox h3{ font-size:11px; margin-bottom:5px; }
+  body.fitScreen .recienteItem{ padding:8px 12px; margin-bottom:6px; font-size:12.5px; }
+  body.fitScreen .recienteItem span.sub{ font-size:11px; }
 
   body.fitScreen #screenMuestreo{
     flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:6px;
@@ -812,10 +819,17 @@ function showToast(msg){
   showToast._h = setTimeout(() => t.classList.remove('show'), 1400);
 }
 function loadRecientes(){
-  try { return JSON.parse(localStorage.getItem('muestreoBanda.recientes')||'[]'); } catch { return []; }
+  // Solo las de HOY: si una sesión reciente quedó guardada de un día anterior
+  // (sin fecha, o con fecha distinta a hoy), no se muestra ni se conserva —
+  // el muestreo es aleatorio día a día y retomar algo de ayer no tiene sentido.
+  try {
+    const hoy = fechaStr();
+    return JSON.parse(localStorage.getItem('muestreoBanda.recientes')||'[]').filter(x => x.fecha === hoy);
+  } catch { return []; }
 }
 function saveReciente(s){
   try {
+    s = { ...s, fecha: fechaStr() };
     let r = loadRecientes().filter(x => sesionId(x.lote,x.grupo,x.bloque) !== sesionId(s.lote,s.grupo,s.bloque));
     r.unshift(s);
     localStorage.setItem('muestreoBanda.recientes', JSON.stringify(r.slice(0,5)));
@@ -1048,8 +1062,8 @@ function pintarRecientes(){
   rs.forEach(r => {
     const d = document.createElement('button');
     d.type = 'button'; d.className = 'recienteItem';
-    const tipoTxt = r.tipo === 'exportacion' ? 'Exportación' : 'Nacional';
-    d.innerHTML = `<span>${tipoTxt} · Lote ${r.lote} · Grupo ${r.grupo} · Bloque ${r.bloque}</span><span class="sub">retomar →</span>`;
+    const tipoTxt = r.tipo === 'exportacion' ? 'Exp.' : 'Nal.';
+    d.innerHTML = `<span class="label">${tipoTxt} · L. ${r.lote} · G. ${r.grupo} · B. ${r.bloque}</span><span class="sub">retomar →</span>`;
     d.addEventListener('click', () => iniciarSesion(r.lote, r.grupo, r.bloque, r.muestreador||'', r.tipo));
     list.appendChild(d);
   });
