@@ -340,6 +340,24 @@
   body.fitScreen #selPreview, body.fitScreen #warnMsg{ display:none; }
   body.fitScreen #counterTotal{ font-size:11.5px; }
 
+  /* En pantallas anchas (tablets) evita que los paneles se estiren de pared
+     a pared — eso hacía que todo se viera "grande", aunque ya cupiera sin
+     scroll. Se centra una columna angosta, como un celular grande, en vez
+     de ocupar todo el ancho de la tablet. */
+  body.fitScreen #screenMuestreo{ max-width:480px; width:100%; margin-left:auto; margin-right:auto; }
+  body.fitScreen #screenSesion{ max-width:440px; }
+  body.fitScreen #actionBarInner{ max-width:480px; }
+
+  @media (min-width:700px){
+    body.fitScreen #screenMuestreo #panelCalibre .bigBtn,
+    body.fitScreen #screenMuestreo #panelCategoria .bigBtn{ min-height:38px; font-size:12px; padding:4px 3px; }
+    body.fitScreen #screenMuestreo #panelDefectos .defBtn{ min-height:34px; font-size:11px; padding:5px 6px; }
+    body.fitScreen #screenMuestreo .panelTitle{ font-size:10px; }
+    body.fitScreen #btnRegistrar{ padding:8px 14px; font-size:13.5px; }
+    body.fitScreen #btnDeshacer{ padding:7px 10px; font-size:11.5px; }
+    body.fitScreen #screenSesion #tipoRow .bigBtn{ min-height:44px; padding:6px; }
+  }
+
   /* ---------- Resultados screen ---------- */
   #buscadorSesiones{ margin-bottom:10px; }
   #listaSesiones{ display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto; }
