@@ -51,6 +51,10 @@
 
     --cal-5:#86b6ef; --cal-6:#6da7ec; --cal-7:#5598e7; --cal-8:#3987e5; --cal-9:#2a78d6; --cal-10:#256abf;
 
+    --color-verde: #2e9e4f;   /* índice de color 0.0 – 1.0 */
+    --color-pintona: #e0a72c; /* índice de color 1.5 – 2.5 */
+    --color-madura: #c9622b;  /* índice de color 3.0 – 4.0 */
+
     --status-good: #0ca30c;
     --status-warning: #fab219;
     --status-critical: #d03b3b;
@@ -73,6 +77,10 @@
       --series-4: #c98500;
 
       --cal-5:#86b6ef; --cal-6:#6da7ec; --cal-7:#5598e7; --cal-8:#3987e5; --cal-9:#2a78d6; --cal-10:#1c5cab;
+
+      --color-verde: #2fb562;
+      --color-pintona: #e6b94a;
+      --color-madura: #d9733a;
     }
   }
   :root[data-theme="dark"]{
@@ -92,6 +100,10 @@
     --series-4: #c98500;
 
     --cal-5:#86b6ef; --cal-6:#6da7ec; --cal-7:#5598e7; --cal-8:#3987e5; --cal-9:#2a78d6; --cal-10:#1c5cab;
+
+    --color-verde: #2fb562;
+    --color-pintona: #e6b94a;
+    --color-madura: #d9733a;
   }
 
   *{ box-sizing:border-box; }
@@ -204,11 +216,12 @@
 
   .grid6{ display:grid; grid-template-columns:repeat(6,1fr); gap:8px; }
   .grid4{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  .grid3{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
   .grid2{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
   @media (max-width:640px){ .grid6{ grid-template-columns:repeat(3,1fr);} .grid4{ grid-template-columns:repeat(2,1fr);} }
 
   #tipoRow .bigBtn{ min-height:76px; font-size:16px; }
-  #tipoRow .bigBtn small{ display:block; font-size:11px; font-weight:600; opacity:.75; margin-top:4px; text-transform:none; letter-spacing:0; }
+  #tipoRow .bigBtn small, #colorRow .bigBtn small{ display:block; font-size:11px; font-weight:600; opacity:.75; margin-top:4px; text-transform:none; letter-spacing:0; }
   #tipoWarn{ color:var(--status-critical); font-size:12.5px; font-weight:600; margin-top:8px; min-height:16px; }
 
   .bigBtn{
@@ -314,13 +327,20 @@
   body.fitScreen #screenMuestreo .panel{ padding:6px 8px; margin-bottom:0; }
   body.fitScreen #screenMuestreo .panelTitle{ margin-bottom:3px; font-size:10px; }
   body.fitScreen #screenMuestreo #panelCalibre,
-  body.fitScreen #screenMuestreo #panelCategoria{ flex:0 0 auto; }
+  body.fitScreen #screenMuestreo #panelCategoria,
+  body.fitScreen #screenMuestreo #panelColor{ flex:0 0 auto; }
   body.fitScreen #screenMuestreo #panelCalibre .bigBtn,
-  body.fitScreen #screenMuestreo #panelCategoria .bigBtn{ min-height:30px; padding:3px 2px; font-size:11px; }
+  body.fitScreen #screenMuestreo #panelCategoria .bigBtn,
+  body.fitScreen #screenMuestreo #panelColor .bigBtn{ min-height:30px; padding:3px 2px; font-size:11px; }
   /* Categoría (Nacional) siempre en una sola fila de 6, incluso en celulares angostos */
   body.fitScreen #screenMuestreo #categoriaRow{ grid-template-columns:repeat(6,1fr); gap:2px; }
   body.fitScreen #screenMuestreo #calibreRow{ gap:2px; }
+  body.fitScreen #screenMuestreo #colorRow{ gap:2px; }
   body.fitScreen #screenMuestreo #tipoWarn{ min-height:0; }
+  /* El rango (0.0–1.0, etc.) se oculta en modo compacto para que el botón de
+     Color quede del mismo alto que los de Categoría/Calibre — ya se explica
+     la primera vez que se usa la app sin modo compacto. */
+  body.fitScreen #screenMuestreo #colorRow .bigBtn small{ display:none; }
 
   body.fitScreen #screenMuestreo #panelDefectos{
     flex:1 1 auto; min-height:0; display:flex; flex-direction:column; overflow:hidden;
@@ -358,7 +378,8 @@
 
   @media (min-width:700px){
     body.fitScreen #screenMuestreo #panelCalibre .bigBtn,
-    body.fitScreen #screenMuestreo #panelCategoria .bigBtn{ min-height:28px; font-size:10.5px; padding:2px 2px; }
+    body.fitScreen #screenMuestreo #panelCategoria .bigBtn,
+    body.fitScreen #screenMuestreo #panelColor .bigBtn{ min-height:28px; font-size:10.5px; padding:2px 2px; }
     body.fitScreen #screenMuestreo #panelDefectos .defBtn{ min-height:24px; font-size:9px; padding:2px 3px; }
     body.fitScreen #screenMuestreo .panelTitle{ font-size:9.5px; }
     body.fitScreen #btnRegistrar{ padding:6px 12px; font-size:12.5px; }
@@ -492,6 +513,10 @@
       <div class="panelTitle">Categoría (Nacional)</div>
       <div class="grid6" id="categoriaRow"></div>
     </div>
+    <div class="panel" id="panelColor">
+      <div class="panelTitle">Color (madurez)</div>
+      <div class="grid3" id="colorRow"></div>
+    </div>
     <div class="panel" id="panelDefectos">
       <div class="panelTitle">Defectos (puedes marcar varios)</div>
       <div class="quickPickRow">
@@ -595,7 +620,7 @@ const auth = getAuth(fbApp);
 /* ---------------- Estado (declarado antes de usarse en los listeners de abajo) ---------------- */
 let sesionActual = null; // {id, lote, grupo, bloque, muestreador, tipo: 'exportacion'|'nacional'}
 let tipoElegido = null; // tipo elegido en la pantalla "Nueva sesión", antes de confirmar
-let sel = { calibre:null, categoria:null, defectos:new Set(), sinDefecto:false };
+let sel = { calibre:null, categoria:null, color:null, defectos:new Set(), sinDefecto:false };
 let undoStack = [];
 let unsubResultados = null;
 let unsubContador = null;
@@ -778,6 +803,14 @@ const CATEGORIAS = [
   { key:'baby',      label:'Baby',      color:'var(--series-4)' },
   { key:'industria', label:'Industria', color:'var(--status-critical)' },
 ];
+// Índice de color (madurez), igual para Nacional y Exportación — no depende
+// del tipo de sesión, a diferencia de calibre/categoría.
+const COLORES = [
+  { key:'verde',   label:'Verde',   rango:'0.0 – 1.0', color:'var(--color-verde)' },
+  { key:'pintona', label:'Pintona', rango:'1.5 – 2.5', color:'var(--color-pintona)' },
+  { key:'madura',  label:'Madura',  rango:'3.0 – 4.0', color:'var(--color-madura)' },
+];
+const COLOR_LABEL = Object.fromEntries(COLORES.map(c => [c.key, c.label]));
 const FAMILIA_A = [
   ['baseCafeTolerable','Base Café Tolerable'],
   ['baseCafeNoTolerable','Base Café No Tolerable'],
@@ -887,6 +920,17 @@ CATEGORIAS.forEach(cat => {
   categoriaRow.appendChild(b);
 });
 
+const colorRow = document.getElementById('colorRow');
+const COLOR_COLOR = Object.fromEntries(COLORES.map(c => [c.key, c.color]));
+COLORES.forEach(col => {
+  const b = document.createElement('button');
+  b.className = 'bigBtn'; b.type='button'; b.dataset.color = col.key;
+  b.innerHTML = `${col.label}<small>${col.rango}</small>`;
+  b.style.setProperty('--sel-color', COLOR_COLOR[col.key]);
+  b.addEventListener('click', () => { sel.color = col.key; renderSeleccion(); });
+  colorRow.appendChild(b);
+});
+
 function renderDefFamilia(container, familia, famClass){
   familia.forEach(d => {
     const b = document.createElement('button');
@@ -919,6 +963,7 @@ document.getElementById('btnBajoPeso').addEventListener('click', () => {
   sel.sinDefecto = false;
   sel.calibre = null;
   sel.categoria = null;
+  sel.color = null;
   sel.defectos = yaActivo ? new Set() : new Set(['bajoPeso']);
   renderSeleccion();
 });
@@ -933,6 +978,10 @@ function renderSeleccion(){
     const on = b.dataset.categoria === sel.categoria;
     b.dataset.selected = on; b.style.background = on ? 'var(--sel-color)' : '';
   });
+  document.querySelectorAll('#colorRow .bigBtn').forEach(b => {
+    const on = b.dataset.color === sel.color;
+    b.dataset.selected = on; b.style.background = on ? 'var(--sel-color)' : '';
+  });
   document.querySelectorAll('.defBtn').forEach(b => {
     b.dataset.selected = sel.defectos.has(b.dataset.def);
   });
@@ -945,17 +994,23 @@ function renderSeleccion(){
   const esBajoPeso = sel.defectos.has('bajoPeso');
   const clasificacionElegida = esExportacion ? sel.calibre : sel.categoria;
 
-  let warn = '';
+  // Igual que calibre/categoría: Bajo Peso no necesita color — es rechazo
+  // automático, no clasifica en nada.
+  const faltaColor = !esBajoPeso && !sel.color;
   const faltaDefecto = sel.defectos.size === 0 && !sel.sinDefecto;
-  if (!esBajoPeso && faltaDefecto) {
+
+  let warn = '';
+  if (!esBajoPeso && faltaColor) {
+    warn = 'Elige un color: Verde, Pintona o Madura';
+  } else if (!esBajoPeso && faltaDefecto) {
     warn = (!esExportacion && sel.categoria === 'industria')
       ? 'Industria requiere al menos un defecto'
       : 'Marca "Sin defecto" o al menos un defecto';
   }
   warnEl.textContent = warn;
 
-  // Bajo Peso no necesita calibre ni categoría: es rechazo automático, no clasifica en nada.
-  const ok = esBajoPeso || (!!clasificacionElegida && !faltaDefecto);
+  // Bajo Peso no necesita calibre, categoría ni color: es rechazo automático, no clasifica en nada.
+  const ok = esBajoPeso || (!!clasificacionElegida && !faltaColor && !faltaDefecto);
   btnReg.disabled = !ok;
 
   const partes = [];
@@ -964,6 +1019,7 @@ function renderSeleccion(){
   } else {
     if (esExportacion) partes.push(sel.calibre ? `Calibre <b>${sel.calibre}</b>` : 'Calibre —');
     else partes.push(sel.categoria ? `<b>${CATEGORIA_LABEL[sel.categoria]}</b>` : 'Categoría —');
+    partes.push(sel.color ? `<b>${COLOR_LABEL[sel.color]}</b>` : 'Color —');
     if (sel.sinDefecto) partes.push('<b>Sin defecto</b>');
     else if (sel.defectos.size) partes.push(`<b>${sel.defectos.size}</b> defecto(s)`);
   }
@@ -971,7 +1027,7 @@ function renderSeleccion(){
 }
 
 function limpiarSeleccion(){
-  sel = { calibre:null, categoria:null, defectos:new Set(), sinDefecto:false };
+  sel = { calibre:null, categoria:null, color:null, defectos:new Set(), sinDefecto:false };
   renderSeleccion();
 }
 
@@ -982,7 +1038,7 @@ async function registrarPina(){
   btnReg.disabled = true;
   const esExportacion = sesionActual.tipo === 'exportacion';
   const dia = fechaStr();
-  const snapshot = { calibre: sel.calibre, categoria: sel.categoria, defectos: [...sel.defectos], sinDefecto: sel.sinDefecto, dia };
+  const snapshot = { calibre: sel.calibre, categoria: sel.categoria, color: sel.color, defectos: [...sel.defectos], sinDefecto: sel.sinDefecto, dia };
 
   const updates = {
     lote: sesionActual.lote, grupo: sesionActual.grupo, bloque: sesionActual.bloque,
@@ -990,12 +1046,21 @@ async function registrarPina(){
     totalFrutas: increment(1),
     [`porDia.${dia}.total`]: increment(1),
   };
-  if (esExportacion) {
+  // Bajo Peso no tiene calibre ni categoría (es rechazo automático, no clasifica
+  // en nada) — solo se suma al total y al conteo de defectos, sin tocar
+  // porCalibre/porCategoria ni sus cruces con defecto, para no guardar basura.
+  if (esExportacion && snapshot.calibre != null) {
     updates[`porCalibre.c${snapshot.calibre}`] = increment(1);
     updates[`porDia.${dia}.porCalibre.c${snapshot.calibre}`] = increment(1);
-  } else {
+  } else if (!esExportacion && snapshot.categoria != null) {
     updates[`porCategoria.${snapshot.categoria}`] = increment(1);
     updates[`porDia.${dia}.porCategoria.${snapshot.categoria}`] = increment(1);
+  }
+  // Color (madurez): igual para Nacional y Exportación, independiente de
+  // calibre/categoría. Bajo Peso tampoco lleva color (snapshot.color queda null).
+  if (snapshot.color != null) {
+    updates[`porColor.${snapshot.color}`] = increment(1);
+    updates[`porDia.${dia}.porColor.${snapshot.color}`] = increment(1);
   }
   if (snapshot.sinDefecto) {
     updates['porDefecto.sinDefecto'] = increment(1);
@@ -1004,10 +1069,10 @@ async function registrarPina(){
     for (const d of snapshot.defectos) {
       updates[`porDefecto.${d}`] = increment(1);
       updates[`porDia.${dia}.porDefecto.${d}`] = increment(1);
-      if (esExportacion) {
+      if (esExportacion && snapshot.calibre != null) {
         updates[`porCalibreDefecto.c${snapshot.calibre}.${d}`] = increment(1);
         updates[`porDia.${dia}.porCalibreDefecto.c${snapshot.calibre}.${d}`] = increment(1);
-      } else {
+      } else if (!esExportacion && snapshot.categoria != null) {
         updates[`porCategoriaDefecto.${snapshot.categoria}.${d}`] = increment(1);
         updates[`porDia.${dia}.porCategoriaDefecto.${snapshot.categoria}.${d}`] = increment(1);
       }
@@ -1037,12 +1102,16 @@ async function deshacerUltima(){
     totalFrutas: increment(-1),
     [`porDia.${dia}.total`]: increment(-1),
   };
-  if (esExportacion) {
+  if (esExportacion && last.calibre != null) {
     updates[`porCalibre.c${last.calibre}`] = increment(-1);
     updates[`porDia.${dia}.porCalibre.c${last.calibre}`] = increment(-1);
-  } else {
+  } else if (!esExportacion && last.categoria != null) {
     updates[`porCategoria.${last.categoria}`] = increment(-1);
     updates[`porDia.${dia}.porCategoria.${last.categoria}`] = increment(-1);
+  }
+  if (last.color != null) {
+    updates[`porColor.${last.color}`] = increment(-1);
+    updates[`porDia.${dia}.porColor.${last.color}`] = increment(-1);
   }
   if (last.sinDefecto) {
     updates['porDefecto.sinDefecto'] = increment(-1);
@@ -1051,10 +1120,10 @@ async function deshacerUltima(){
     for (const d of last.defectos) {
       updates[`porDefecto.${d}`] = increment(-1);
       updates[`porDia.${dia}.porDefecto.${d}`] = increment(-1);
-      if (esExportacion) {
+      if (esExportacion && last.calibre != null) {
         updates[`porCalibreDefecto.c${last.calibre}.${d}`] = increment(-1);
         updates[`porDia.${dia}.porCalibreDefecto.c${last.calibre}.${d}`] = increment(-1);
-      } else {
+      } else if (!esExportacion && last.categoria != null) {
         updates[`porCategoriaDefecto.${last.categoria}.${d}`] = increment(-1);
         updates[`porDia.${dia}.porCategoriaDefecto.${last.categoria}.${d}`] = increment(-1);
       }
@@ -1131,7 +1200,7 @@ async function iniciarSesion(lote,grupo,bloque,muestreador,tipo){
   if (!snap || !snap.exists()) {
     await setDoc(ref, {
       lote, grupo, bloque, tipo, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp(),
-      totalFrutas: 0, porCalibre:{}, porCategoria:{}, porDefecto:{}, porCalibreDefecto:{}, porCategoriaDefecto:{}, porDia:{}
+      totalFrutas: 0, porCalibre:{}, porCategoria:{}, porColor:{}, porDefecto:{}, porCalibreDefecto:{}, porCategoriaDefecto:{}, porDia:{}
     }, { merge:true }).catch((e) => showToast('✗ ' + e.message));
   }
 
@@ -1283,7 +1352,7 @@ function renderResumenGeneral(){
   const grupoFiltro = document.getElementById('filtroGrupo').value;
 
   let total = 0, sinDefectoTotal = 0;
-  const porGrupo = {}, porCalibreAg = {}, porCategoriaAg = {}, porDefectoAg = {};
+  const porGrupo = {}, porCalibreAg = {}, porCategoriaAg = {}, porColorAg = {}, porDefectoAg = {};
   const porCalibreDefectoAg = {}, porCategoriaDefectoAg = {}; // { defectoKey: { xKey: count } }
 
   ultimasSesionesDocs.forEach(({d}) => {
@@ -1298,6 +1367,9 @@ function renderResumenGeneral(){
       const pDef = dd.porDefecto || {};
       sinDefectoTotal += pDef.sinDefecto || 0;
       Object.entries(pDef).forEach(([k,v]) => { if (k !== 'sinDefecto' && v) porDefectoAg[k] = (porDefectoAg[k]||0) + v; });
+      // Color (madurez): igual para Nacional y Exportación, por eso se agrega
+      // afuera de la rama tipo==='exportacion' de abajo.
+      Object.entries(dd.porColor||{}).forEach(([k,v]) => { if (v) porColorAg[k] = (porColorAg[k]||0) + v; });
       if (d.tipo === 'exportacion') {
         Object.entries(dd.porCalibre||{}).forEach(([k,v]) => { if (v) porCalibreAg[k] = (porCalibreAg[k]||0) + v; });
         Object.entries(dd.porCalibreDefecto||{}).forEach(([calKey, defs]) => {
@@ -1338,6 +1410,9 @@ function renderResumenGeneral(){
   if (Object.keys(porCategoriaAg).length) {
     bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por categoría (Nacional) — ${etiquetaGrupo}</div><div id="barCategoria"></div></div>`;
   }
+  if (Object.keys(porColorAg).length) {
+    bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por color (madurez) — ${etiquetaGrupo}</div><div id="barColor"></div></div>`;
+  }
   const totalDefectosSum = Object.values(porDefectoAg).reduce((s,v) => s+v, 0);
 
   cont.innerHTML = `
@@ -1358,6 +1433,9 @@ function renderResumenGeneral(){
   }
   if (Object.keys(porCategoriaAg).length) {
     renderBarChart(document.getElementById('barCategoria'), CATEGORIAS.map(c => { const v = porCategoriaAg[c.key]||0; return { label:c.label, value:v, pct: Math.round((v/total)*100), color:c.color }; }));
+  }
+  if (Object.keys(porColorAg).length) {
+    renderBarChart(document.getElementById('barColor'), COLORES.map(c => { const v = porColorAg[c.key]||0; return { label:c.label, value:v, pct: Math.round((v/total)*100), color:c.color }; }));
   }
   if (totalDefectosSum) {
     const puntosDefecto = Object.entries(porDefectoAg).sort((a,b) => b[1]-a[1])
@@ -1561,6 +1639,7 @@ function renderResultados(data){
   const total = data.totalFrutas || 0;
   const esExportacion = data.tipo === 'exportacion';
   const porClasificacion = esExportacion ? (data.porCalibre || {}) : (data.porCategoria || {});
+  const porColor = data.porColor || {};
   const porDefecto = data.porDefecto || {};
   const porClasificacionDefecto = esExportacion ? (data.porCalibreDefecto || {}) : (data.porCategoriaDefecto || {});
 
@@ -1590,6 +1669,7 @@ function renderResultados(data){
       </div>
     </div>
     <div class="panel"><div class="panelTitle">${tituloClasificacion}</div><div id="barClasificacion"></div></div>
+    ${Object.values(porColor).some(v => v) ? `<div class="panel"><div class="panelTitle">Por color (madurez)</div><div id="barColor"></div></div>` : ''}
     <div class="panel">
       <div class="rowHead">
         <div class="panelTitle" style="margin:0;">Por defecto</div>
@@ -1606,6 +1686,13 @@ function renderResultados(data){
     const v = porClasificacion[it.key]||0;
     return { label: it.label, value: v, pct: total ? Math.round((v/total)*100) : 0, color: it.color };
   }));
+
+  if (Object.values(porColor).some(v => v)) {
+    renderBarChart(document.getElementById('barColor'), COLORES.map(c => {
+      const v = porColor[c.key]||0;
+      return { label: c.label, value: v, pct: total ? Math.round((v/total)*100) : 0, color: c.color };
+    }));
+  }
 
   function pintarDefectos(){
     const filtro = document.getElementById('filtroClasificacionDef').value;
