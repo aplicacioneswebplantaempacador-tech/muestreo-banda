@@ -1290,18 +1290,33 @@ function cargarListaSesiones(){
 function renderListaSesiones(){
   const cont = document.getElementById('listaSesiones');
   const filtro = document.getElementById('buscadorSesiones').value.trim().toLowerCase();
+  // Solo se listan los bloques que SÍ tuvieron muestreos dentro del rango de
+  // fechas elegido arriba (Desde/Hasta) — ya no hace falta buscar entre todo
+  // el historial, porque el bloque que estás muestreando hoy ya aparece
+  // arriba en "Resumen general" con su propia gráfica de color.
+  const desdeInput = document.getElementById('filtroDesde').value;
+  const hastaInput = document.getElementById('filtroHasta').value;
+  const desdeN = desdeInput ? desdeInput.replace(/-/g,'') : null;
+  const hastaN = hastaInput ? hastaInput.replace(/-/g,'') : null;
   cont.innerHTML = '';
   ultimasSesionesDocs.forEach(({id, d}) => {
     const texto = `${d.lote} ${d.grupo} ${d.bloque}`.toLowerCase();
     if (filtro && !texto.includes(filtro)) return;
+    let totalEnRango = d.totalFrutas || 0;
+    if (desdeN && hastaN) {
+      totalEnRango = Object.entries(d.porDia || {}).reduce((s, [fecha, dd]) => {
+        return (fecha >= desdeN && fecha <= hastaN) ? s + (dd.total || 0) : s;
+      }, 0);
+      if (!totalEnRango) return; // no muestreó nada en este rango de fechas — se omite
+    }
     const row = document.createElement('button');
     row.type='button'; row.className = 'sesionRow' + (sesionSeleccionadaId === id ? ' active' : '');
     const tipoTag = d.tipo === 'exportacion' ? 'EXP' : 'NAL';
-    row.innerHTML = `<span>[${tipoTag}] Lote ${d.lote} · Grupo ${d.grupo} · Bloque ${d.bloque}</span><span class="n">${d.totalFrutas||0} 🍍</span>`;
+    row.innerHTML = `<span>[${tipoTag}] Lote ${d.lote} · Grupo ${d.grupo} · Bloque ${d.bloque}</span><span class="n">${totalEnRango} 🍍</span>`;
     row.addEventListener('click', () => verResultados(id));
     cont.appendChild(row);
   });
-  if (!cont.children.length) cont.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Sin sesiones todavía.</div>';
+  if (!cont.children.length) cont.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Sin bloques muestreados en este rango de fechas.</div>';
 }
 document.getElementById('buscadorSesiones').addEventListener('input', renderListaSesiones);
 
@@ -1312,7 +1327,7 @@ function inicializarFiltrosFecha(){
   document.getElementById('filtroHasta').value = hoy;
 }
 inicializarFiltrosFecha();
-function filtrosFechaCambiaron(){ poblarFiltroGrupo(); renderResumenGeneral(); }
+function filtrosFechaCambiaron(){ poblarFiltroGrupo(); renderResumenGeneral(); renderListaSesiones(); }
 document.getElementById('filtroDesde').addEventListener('change', filtrosFechaCambiaron);
 document.getElementById('filtroHasta').addEventListener('change', filtrosFechaCambiaron);
 document.getElementById('filtroGrupo').addEventListener('change', renderResumenGeneral);
