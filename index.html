@@ -456,6 +456,8 @@
   .rankDominante{ font-size:12px; color:var(--text-secondary); margin-top:6px; }
   .rankDominante b{ color:var(--text-primary); }
 </style>
+<!-- SheetJS: solo para generar el Excel descargable del Resumen general — no toca Firestore ni la lógica de muestreo. -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -1354,22 +1356,33 @@ function renderResumenGeneral(){
   let total = 0, sinDefectoTotal = 0;
   const porGrupo = {}, porCalibreAg = {}, porCategoriaAg = {}, porColorAg = {}, porDefectoAg = {};
   const porCalibreDefectoAg = {}, porCategoriaDefectoAg = {}; // { defectoKey: { xKey: count } }
+  // Desglose de Color bloque a bloque (grupo+lote+bloque) — SOLO color, a
+  // diferencia de todo lo demás arriba que sigue siendo un único total general.
+  const bloques = [];
 
   ultimasSesionesDocs.forEach(({d}) => {
     if (grupoFiltro && d.grupo !== grupoFiltro) return;
     const dias = d.porDia || {};
+    let totalBloque = 0;
+    const porColorBloque = {};
     Object.entries(dias).forEach(([fecha, dd]) => {
       if (fecha < desdeN || fecha > hastaN) return;
       const t = dd.total || 0;
       if (!t) return;
       total += t;
+      totalBloque += t;
       porGrupo[d.grupo] = (porGrupo[d.grupo]||0) + t;
       const pDef = dd.porDefecto || {};
       sinDefectoTotal += pDef.sinDefecto || 0;
       Object.entries(pDef).forEach(([k,v]) => { if (k !== 'sinDefecto' && v) porDefectoAg[k] = (porDefectoAg[k]||0) + v; });
       // Color (madurez): igual para Nacional y Exportación, por eso se agrega
-      // afuera de la rama tipo==='exportacion' de abajo.
-      Object.entries(dd.porColor||{}).forEach(([k,v]) => { if (v) porColorAg[k] = (porColorAg[k]||0) + v; });
+      // afuera de la rama tipo==='exportacion' de abajo. Se suma al total
+      // general (porColorAg) Y al total de este bloque (porColorBloque).
+      Object.entries(dd.porColor||{}).forEach(([k,v]) => {
+        if (!v) return;
+        porColorAg[k] = (porColorAg[k]||0) + v;
+        porColorBloque[k] = (porColorBloque[k]||0) + v;
+      });
       if (d.tipo === 'exportacion') {
         Object.entries(dd.porCalibre||{}).forEach(([k,v]) => { if (v) porCalibreAg[k] = (porCalibreAg[k]||0) + v; });
         Object.entries(dd.porCalibreDefecto||{}).forEach(([calKey, defs]) => {
@@ -1390,7 +1403,11 @@ function renderResumenGeneral(){
         });
       }
     });
+    if (totalBloque) {
+      bloques.push({ grupo:d.grupo, lote:d.lote, bloque:d.bloque, tipo:d.tipo, total:totalBloque, porColor:porColorBloque });
+    }
   });
+  bloques.sort((a,b) => b.total - a.total);
 
   if (!total) {
     cont.innerHTML = '<div id="emptyResultados">Sin muestreos registrados en este rango de fechas.</div>';
@@ -1414,6 +1431,11 @@ function renderResumenGeneral(){
     bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por color (madurez) — ${etiquetaGrupo}</div><div id="barColor"></div></div>`;
   }
   const totalDefectosSum = Object.values(porDefectoAg).reduce((s,v) => s+v, 0);
+  // Desglose de color bloque a bloque — solo color, no categoría/calibre/defectos.
+  const bloquesConColor = bloques.filter(b => Object.values(b.porColor).some(v => v));
+  const seccionColorPorBloque = bloquesConColor.length
+    ? `<div class="panel"><div class="panelTitle">Color por bloque muestreado — ${etiquetaGrupo}</div><div id="coloresPorBloque"></div></div>`
+    : '';
 
   cont.innerHTML = `
     <div class="statTiles" style="margin-bottom:14px;">
@@ -1423,9 +1445,13 @@ function renderResumenGeneral(){
       ${paretoTextoHTML(Object.entries(porDefectoAg))}
     </div>
     ${bloquesClasificacion}
+    ${seccionColorPorBloque}
     ${totalDefectosSum ? `<div class="panel"><div class="panelTitle">Defectos — ${etiquetaGrupo}</div><div id="barDefecto"></div></div>` : ''}
     ${Object.keys(porCategoriaDefectoAg).length ? `<div class="panel"><div class="panelTitle">Defectos por categoría — dónde sale más cada uno — ${etiquetaGrupo}</div><div id="rankingCategoriaDefecto"></div></div>` : ''}
     ${Object.keys(porCalibreDefectoAg).length ? `<div class="panel"><div class="panelTitle">Defectos por calibre — dónde sale más cada uno — ${etiquetaGrupo}</div><div id="rankingCalibreDefecto"></div></div>` : ''}
+    <div style="text-align:center; margin-top:4px;">
+      <button type="button" id="btnDescargarExcel" class="btnGhost">⬇ Descargar Excel de este resumen</button>
+    </div>
   `;
 
   if (Object.keys(porCalibreAg).length) {
@@ -1436,6 +1462,27 @@ function renderResumenGeneral(){
   }
   if (Object.keys(porColorAg).length) {
     renderBarChart(document.getElementById('barColor'), COLORES.map(c => { const v = porColorAg[c.key]||0; return { label:c.label, value:v, pct: Math.round((v/total)*100), color:c.color }; }));
+  }
+  // Color por bloque (grupo+lote+bloque) — una gráfica chiquita por cada
+  // bloque muestreado, solo de color, como pediste (lo demás sigue siendo
+  // un único total general arriba).
+  if (bloquesConColor.length) {
+    const contBloques = document.getElementById('coloresPorBloque');
+    contBloques.innerHTML = bloquesConColor.map((b, i) => `
+      <div style="${i ? 'border-top:1px solid var(--border); margin-top:14px; padding-top:14px;' : ''}">
+        <div style="font-size:12.5px; font-weight:700; color:var(--text-secondary); margin-bottom:8px;">
+          Grupo ${b.grupo} · Lote ${b.lote} · Bloque ${b.bloque}
+          <span style="font-weight:500; color:var(--text-muted);"> — ${b.total} piñas muestreadas de este bloque</span>
+        </div>
+        <div id="barColorBloque${i}"></div>
+      </div>
+    `).join('');
+    bloquesConColor.forEach((b, i) => {
+      renderBarChart(document.getElementById('barColorBloque'+i), COLORES.map(c => {
+        const v = b.porColor[c.key]||0;
+        return { label:c.label, value:v, pct: b.total ? Math.round((v/b.total)*100) : 0, color:c.color };
+      }));
+    });
   }
   if (totalDefectosSum) {
     const puntosDefecto = Object.entries(porDefectoAg).sort((a,b) => b[1]-a[1])
@@ -1450,6 +1497,67 @@ function renderResumenGeneral(){
     const itemsCal = CALIBRES.map(c => ({ key:'c'+c, label:'Calibre '+c, color:`var(--cal-${c})` }));
     renderRankingDefectosPorClasificacion(document.getElementById('rankingCalibreDefecto'), porCalibreDefectoAg, itemsCal);
   }
+
+  // Datos de este mismo resumen, listos para el botón "Descargar Excel".
+  const datosExcel = {
+    desde: desdeInput, hasta: hastaInput, grupoFiltro: grupoFiltro || 'Todos',
+    total, pctSinDefecto,
+    categoria: CATEGORIAS.map(c => ({ label:c.label, cantidad: porCategoriaAg[c.key]||0 })),
+    calibre: CALIBRES.map(c => ({ label:'Calibre '+c, cantidad: porCalibreAg['c'+c]||0 })),
+    color: COLORES.map(c => ({ label:c.label, cantidad: porColorAg[c.key]||0 })),
+    defectos: Object.entries(porDefectoAg).sort((a,b)=>b[1]-a[1]).map(([k,v]) => ({ label: DEFECTO_LABEL[k]||k, cantidad:v })),
+    bloques: bloques.map(b => ({
+      grupo:b.grupo, lote:b.lote, bloque:b.bloque, tipo: b.tipo==='exportacion'?'Exportación':'Nacional',
+      total:b.total, verde:b.porColor.verde||0, pintona:b.porColor.pintona||0, madura:b.porColor.madura||0,
+    })),
+  };
+  document.getElementById('btnDescargarExcel').addEventListener('click', () => descargarExcelResumen_(datosExcel));
+}
+
+/* ---------------- Excel descargable del Resumen general (usa SheetJS, cargado en <head>) ---------------- */
+function descargarExcelResumen_(d){
+  if (typeof XLSX === 'undefined') { showToast('✗ No se pudo cargar el generador de Excel (revisa tu conexión)'); return; }
+  const wb = XLSX.utils.book_new();
+
+  const filasResumen = [
+    ['Muestreo en Banda — Resumen general'],
+    ['Rango', `${d.desde} a ${d.hasta}`],
+    ['Grupo', d.grupoFiltro],
+    [],
+    ['Piñas muestreadas', d.total],
+    ['% sin defecto', d.pctSinDefecto + '%'],
+    [],
+    ['Por categoría', 'Cantidad', '%'],
+    ...d.categoria.filter(x => x.cantidad).map(x => [x.label, x.cantidad, d.total ? Math.round((x.cantidad/d.total)*100)+'%' : '0%']),
+    [],
+    ['Por calibre', 'Cantidad', '%'],
+    ...d.calibre.filter(x => x.cantidad).map(x => [x.label, x.cantidad, d.total ? Math.round((x.cantidad/d.total)*100)+'%' : '0%']),
+    [],
+    ['Por color (madurez)', 'Cantidad', '%'],
+    ...d.color.filter(x => x.cantidad).map(x => [x.label, x.cantidad, d.total ? Math.round((x.cantidad/d.total)*100)+'%' : '0%']),
+    [],
+    ['Defectos', 'Cantidad'],
+    ...d.defectos.map(x => [x.label, x.cantidad]),
+  ];
+  const hojaResumen = XLSX.utils.aoa_to_sheet(filasResumen);
+  hojaResumen['!cols'] = [{ wch:28 }, { wch:14 }, { wch:8 }];
+  XLSX.utils.book_append_sheet(wb, hojaResumen, 'Resumen');
+
+  const filasBloques = [
+    ['Grupo','Lote','Bloque','Tipo','Piñas muestreadas','Verde','Pintona','Madura','% Verde','% Pintona','% Madura'],
+    ...d.bloques.map(b => [
+      b.grupo, b.lote, b.bloque, b.tipo, b.total, b.verde, b.pintona, b.madura,
+      b.total ? Math.round((b.verde/b.total)*100)+'%' : '0%',
+      b.total ? Math.round((b.pintona/b.total)*100)+'%' : '0%',
+      b.total ? Math.round((b.madura/b.total)*100)+'%' : '0%',
+    ]),
+  ];
+  const hojaBloques = XLSX.utils.aoa_to_sheet(filasBloques);
+  hojaBloques['!cols'] = [{wch:10},{wch:10},{wch:10},{wch:12},{wch:16},{wch:8},{wch:9},{wch:8},{wch:9},{wch:10},{wch:9}];
+  XLSX.utils.book_append_sheet(wb, hojaBloques, 'Bloques');
+
+  const nombreArchivo = `muestreo-banda_resumen_${d.desde}_a_${d.hasta}.xlsx`;
+  XLSX.writeFile(wb, nombreArchivo);
 }
 
 /* ---------------- Pareto de defectos: SOLO texto — los tipos que explican el 80% ---------------- */
@@ -1669,7 +1777,7 @@ function renderResultados(data){
       </div>
     </div>
     <div class="panel"><div class="panelTitle">${tituloClasificacion}</div><div id="barClasificacion"></div></div>
-    ${Object.values(porColor).some(v => v) ? `<div class="panel"><div class="panelTitle">Por color (madurez)</div><div id="barColor"></div></div>` : ''}
+    ${Object.values(porColor).some(v => v) ? `<div class="panel"><div class="panelTitle">Por color (madurez)</div><div id="barColorSesion"></div></div>` : ''}
     <div class="panel">
       <div class="rowHead">
         <div class="panelTitle" style="margin:0;">Por defecto</div>
@@ -1688,7 +1796,7 @@ function renderResultados(data){
   }));
 
   if (Object.values(porColor).some(v => v)) {
-    renderBarChart(document.getElementById('barColor'), COLORES.map(c => {
+    renderBarChart(document.getElementById('barColorSesion'), COLORES.map(c => {
       const v = porColor[c.key]||0;
       return { label: c.label, value: v, pct: total ? Math.round((v/total)*100) : 0, color: c.color };
     }));
