@@ -1371,6 +1371,9 @@ function renderResumenGeneral(){
   let total = 0, sinDefectoTotal = 0;
   const porGrupo = {}, porCalibreAg = {}, porCategoriaAg = {}, porColorAg = {}, porDefectoAg = {};
   const porCalibreDefectoAg = {}, porCategoriaDefectoAg = {}; // { defectoKey: { xKey: count } }
+  // Desglose por grupo SOLO de categoría y defectos (las dos gráficas que antes
+  // mezclaban varios grupos en un solo promedio). { grupo: { key: count } }
+  const porCategoriaPorGrupo = {}, porDefectoPorGrupo = {};
   // Desglose de Color bloque a bloque (grupo+lote+bloque) — SOLO color, a
   // diferencia de todo lo demás arriba que sigue siendo un único total general.
   const bloques = [];
@@ -1390,6 +1393,8 @@ function renderResumenGeneral(){
       const pDef = dd.porDefecto || {};
       sinDefectoTotal += pDef.sinDefecto || 0;
       Object.entries(pDef).forEach(([k,v]) => { if (k !== 'sinDefecto' && v) porDefectoAg[k] = (porDefectoAg[k]||0) + v; });
+      porDefectoPorGrupo[d.grupo] = porDefectoPorGrupo[d.grupo] || {};
+      Object.entries(pDef).forEach(([k,v]) => { if (k !== 'sinDefecto' && v) porDefectoPorGrupo[d.grupo][k] = (porDefectoPorGrupo[d.grupo][k]||0) + v; });
       // Color (madurez): igual para Nacional y Exportación, por eso se agrega
       // afuera de la rama tipo==='exportacion' de abajo. Se suma al total
       // general (porColorAg) Y al total de este bloque (porColorBloque).
@@ -1409,6 +1414,8 @@ function renderResumenGeneral(){
         });
       } else {
         Object.entries(dd.porCategoria||{}).forEach(([k,v]) => { if (v) porCategoriaAg[k] = (porCategoriaAg[k]||0) + v; });
+        porCategoriaPorGrupo[d.grupo] = porCategoriaPorGrupo[d.grupo] || {};
+        Object.entries(dd.porCategoria||{}).forEach(([k,v]) => { if (v) porCategoriaPorGrupo[d.grupo][k] = (porCategoriaPorGrupo[d.grupo][k]||0) + v; });
         Object.entries(dd.porCategoriaDefecto||{}).forEach(([catKey, defs]) => {
           Object.entries(defs||{}).forEach(([defKey,v]) => {
             if (!v) return;
@@ -1434,18 +1441,37 @@ function renderResumenGeneral(){
   const etiquetaGrupo = grupoFiltro
     ? `Grupo ${grupoFiltro}`
     : gruposOrdenados.map(([g,v]) => `Grupo ${g} (${Math.round((v/total)*100)}%)`).join(' · ');
+  // Categoría y Defectos ya no mezclan varios grupos en un solo título: arriba
+  // se ve el total general, y abajo (solo si hay más de un grupo y no hay
+  // filtro de grupo activo) un desglose grupo por grupo de esas dos.
+  const etiquetaCatDef = grupoFiltro ? `Grupo ${grupoFiltro}` : 'Muestreo total';
+  const mostrarPorGrupo = !grupoFiltro && gruposOrdenados.length > 1;
+  const categoriaPorGrupoList = mostrarPorGrupo
+    ? gruposOrdenados.map(([g, totalG]) => ({ grupo:g, total:totalG, datos: porCategoriaPorGrupo[g]||{} }))
+        .filter(x => Object.values(x.datos).some(v => v))
+    : [];
+  const defectoPorGrupoList = mostrarPorGrupo
+    ? gruposOrdenados.map(([g, totalG]) => ({ grupo:g, total:totalG, datos: porDefectoPorGrupo[g]||{} }))
+        .filter(x => Object.values(x.datos).some(v => v))
+    : [];
 
   let bloquesClasificacion = '';
   if (Object.keys(porCalibreAg).length) {
     bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por calibre (Exportación) — ${etiquetaGrupo}</div><div id="barCalibre"></div></div>`;
   }
   if (Object.keys(porCategoriaAg).length) {
-    bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por categoría (Nacional) — ${etiquetaGrupo}</div><div id="barCategoria"></div></div>`;
+    bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por categoría (Nacional) — ${etiquetaCatDef}</div><div id="barCategoria"></div></div>`;
+    if (categoriaPorGrupoList.length) {
+      bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por categoría (Nacional) por grupo</div><div id="categoriaPorGrupo"></div></div>`;
+    }
   }
   if (Object.keys(porColorAg).length) {
     bloquesClasificacion += `<div class="panel"><div class="panelTitle">Por color (madurez) — ${etiquetaGrupo}</div><div id="barColor"></div></div>`;
   }
   const totalDefectosSum = Object.values(porDefectoAg).reduce((s,v) => s+v, 0);
+  const seccionDefectosPorGrupo = defectoPorGrupoList.length
+    ? `<div class="panel"><div class="panelTitle">Defectos por grupo</div><div id="defectosPorGrupo"></div></div>`
+    : '';
   // Desglose de color bloque a bloque — solo color, no categoría/calibre/defectos.
   const bloquesConColor = bloques.filter(b => Object.values(b.porColor).some(v => v));
   const seccionColorPorBloque = bloquesConColor.length
@@ -1461,7 +1487,8 @@ function renderResumenGeneral(){
     </div>
     ${bloquesClasificacion}
     ${seccionColorPorBloque}
-    ${totalDefectosSum ? `<div class="panel"><div class="panelTitle">Defectos — ${etiquetaGrupo}</div><div id="barDefecto"></div></div>` : ''}
+    ${totalDefectosSum ? `<div class="panel"><div class="panelTitle">Defectos — ${etiquetaCatDef}</div><div id="barDefecto"></div></div>` : ''}
+    ${seccionDefectosPorGrupo}
     ${Object.keys(porCategoriaDefectoAg).length ? `<div class="panel"><div class="panelTitle">Defectos por categoría — dónde sale más cada uno — ${etiquetaGrupo}</div><div id="rankingCategoriaDefecto"></div></div>` : ''}
     ${Object.keys(porCalibreDefectoAg).length ? `<div class="panel"><div class="panelTitle">Defectos por calibre — dónde sale más cada uno — ${etiquetaGrupo}</div><div id="rankingCalibreDefecto"></div></div>` : ''}
     <div style="text-align:center; margin-top:4px;">
@@ -1474,6 +1501,25 @@ function renderResumenGeneral(){
   }
   if (Object.keys(porCategoriaAg).length) {
     renderBarChart(document.getElementById('barCategoria'), CATEGORIAS.map(c => { const v = porCategoriaAg[c.key]||0; return { label:c.label, value:v, pct: Math.round((v/total)*100), color:c.color }; }));
+  }
+  // Por categoría — desglose grupo por grupo (una gráfica chiquita por grupo).
+  if (categoriaPorGrupoList.length) {
+    const contCatGrupo = document.getElementById('categoriaPorGrupo');
+    contCatGrupo.innerHTML = categoriaPorGrupoList.map((g, i) => `
+      <div style="${i ? 'border-top:1px solid var(--border); margin-top:14px; padding-top:14px;' : ''}">
+        <div style="font-size:12.5px; font-weight:700; color:var(--text-secondary); margin-bottom:8px;">
+          Grupo ${g.grupo}
+          <span style="font-weight:500; color:var(--text-muted);"> — ${g.total} piñas muestreadas de este grupo</span>
+        </div>
+        <div id="barCategoriaGrupo${i}"></div>
+      </div>
+    `).join('');
+    categoriaPorGrupoList.forEach((g, i) => {
+      renderBarChart(document.getElementById('barCategoriaGrupo'+i), CATEGORIAS.map(c => {
+        const v = g.datos[c.key]||0;
+        return { label:c.label, value:v, pct: g.total ? Math.round((v/g.total)*100) : 0, color:c.color };
+      }));
+    });
   }
   if (Object.keys(porColorAg).length) {
     renderBarChart(document.getElementById('barColor'), COLORES.map(c => { const v = porColorAg[c.key]||0; return { label:c.label, value:v, pct: Math.round((v/total)*100), color:c.color }; }));
@@ -1503,6 +1549,25 @@ function renderResumenGeneral(){
     const puntosDefecto = Object.entries(porDefectoAg).sort((a,b) => b[1]-a[1])
       .map(([k,v]) => ({ label: DEFECTO_LABEL[k]||k, value:v, pct: Math.round((v/totalDefectosSum)*100) }));
     renderBarChart(document.getElementById('barDefecto'), puntosDefecto, { colorPunto:'var(--series-2)' });
+  }
+  // Defectos — desglose grupo por grupo (una gráfica chiquita por grupo).
+  if (defectoPorGrupoList.length) {
+    const contDefGrupo = document.getElementById('defectosPorGrupo');
+    contDefGrupo.innerHTML = defectoPorGrupoList.map((g, i) => `
+      <div style="${i ? 'border-top:1px solid var(--border); margin-top:14px; padding-top:14px;' : ''}">
+        <div style="font-size:12.5px; font-weight:700; color:var(--text-secondary); margin-bottom:8px;">
+          Grupo ${g.grupo}
+          <span style="font-weight:500; color:var(--text-muted);"> — ${g.total} piñas muestreadas de este grupo</span>
+        </div>
+        <div id="barDefectoGrupo${i}"></div>
+      </div>
+    `).join('');
+    defectoPorGrupoList.forEach((g, i) => {
+      const sumaG = Object.values(g.datos).reduce((s,v) => s+v, 0);
+      const puntosG = Object.entries(g.datos).sort((a,b) => b[1]-a[1])
+        .map(([k,v]) => ({ label: DEFECTO_LABEL[k]||k, value:v, pct: sumaG ? Math.round((v/sumaG)*100) : 0 }));
+      renderBarChart(document.getElementById('barDefectoGrupo'+i), puntosG, { colorPunto:'var(--series-2)' });
+    });
   }
   if (Object.keys(porCategoriaDefectoAg).length) {
     const itemsCat = CATEGORIAS.map(c => ({ key:c.key, label:c.label, color:c.color }));
