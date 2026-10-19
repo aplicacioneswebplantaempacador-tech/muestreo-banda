@@ -1356,30 +1356,64 @@ function poblarFiltroGrupo(){
   } else {
     grupos = [...new Set(ultimasSesionesDocs.map(({d}) => d.grupo).filter(Boolean))];
   }
+  // Si ya había un grupo específico elegido, nunca lo quitamos de la lista ni
+  // lo des-seleccionamos solo porque este rango de fechas más angosto (y el
+  // set recortado de 200 que usamos aquí solo para "descubrir" grupos) no
+  // tenga datos suyos ahí: eso borraría en silencio la elección del usuario
+  // y "Resumen general" terminaría mostrando "Todos los grupos" sin avisar.
+  // El grupo elegido se queda seleccionado hasta que el usuario mismo elija
+  // otro (o "Todos los grupos") en el desplegable.
+  if (actual && !grupos.includes(actual)) grupos.push(actual);
   grupos.sort((a,b) => a.localeCompare(b, 'es', {numeric:true}));
   sel.innerHTML = '<option value="">Todos los grupos</option>' + grupos.map(g => `<option value="${g}">Grupo ${g}</option>`).join('');
-  sel.value = grupos.includes(actual) ? actual : '';
+  sel.value = actual;
 }
+
+// Trae TODOS los documentos de "sesiones" de un grupo, sin el límite de 200
+// que usa la lista general — para que un grupo con muchos bloques (algunos
+// de ellos sin tocar hace días) no se quede corto frente a otros grupos más
+// activos que sí entran en ese límite.
+async function obtenerDocsCompletosDeGrupo_(grupo){
+  const snap = await getDocs(query(collection(db,'sesiones'), where('grupo','==',grupo)));
+  const docs = [];
+  snap.forEach(docSnap => docs.push({ id: docSnap.id, d: docSnap.data() }));
+  return docs;
+}
+
+// Set COMPLETO (sin el límite de 200) del grupo actualmente elegido en el
+// filtro de arriba — lo usan tanto "Resumen general" (renderResumenGeneral)
+// como el informe gerencial en Word, para que ninguno de los dos se quede
+// corto. null cuando no hay un grupo específico elegido ("Todos los grupos").
+let datosGrupoSeleccionado = null; // { grupo, docs: [{id,d}] }
 
 /* Rango real (desde cuándo hasta cuándo) de un grupo, SIN importar el filtro
  * Desde/Hasta de arriba — consulta Firestore directo por "grupo" (no depende
  * de los últimos 200 documentos cargados) para que el dato sea exacto y no
- * "adivinado". Se actualiza cada vez que cambias el grupo seleccionado. */
+ * "adivinado". Se actualiza cada vez que cambias el grupo seleccionado, y de
+ * paso deja en datosGrupoSeleccionado el set completo para que "Resumen
+ * general" y el informe Word lo puedan usar también. */
 let tokenConsultaRangoGrupo_ = 0;
 async function actualizarRangoGrupo_(){
   const grupo = document.getElementById('filtroGrupo').value;
   const caja = document.getElementById('rangoGrupoInfo');
+  if (!grupo) { caja.classList.add('hidden'); caja.innerHTML = ''; datosGrupoSeleccionado = null; return; }
+  if (datosGrupoSeleccionado && datosGrupoSeleccionado.grupo === grupo) {
+    // Ya tenemos el set completo de este mismo grupo (solo cambiaste de
+    // fechas, no de grupo) — no hace falta volver a consultar Firestore.
+    renderResumenGeneral();
+    renderListaSesiones();
+    return;
+  }
   const miToken = ++tokenConsultaRangoGrupo_;
-  if (!grupo) { caja.classList.add('hidden'); caja.innerHTML = ''; return; }
   caja.classList.remove('hidden');
   caja.innerHTML = `<span>🔍 Consultando el rango completo de fechas del Grupo ${grupo}…</span>`;
   try {
-    const snap = await getDocs(query(collection(db,'sesiones'), where('grupo','==',grupo)));
+    const docs = await obtenerDocsCompletosDeGrupo_(grupo);
     if (miToken !== tokenConsultaRangoGrupo_) return; // ya cambiaste de grupo mientras consultaba
+    datosGrupoSeleccionado = { grupo, docs };
     const diasConDatos = new Set();
     let totalGeneral = 0;
-    snap.forEach(docSnap => {
-      const d = docSnap.data();
+    docs.forEach(({d}) => {
       Object.entries(d.porDia || {}).forEach(([fecha, dd]) => {
         const t = dd.total || 0;
         if (t > 0) { diasConDatos.add(fecha); totalGeneral += t; }
@@ -1393,7 +1427,7 @@ async function actualizarRangoGrupo_(){
     const inicio = ordenados[0], fin = ordenados[ordenados.length-1];
     caja.innerHTML = `
       <span><b>Grupo ${grupo}:</b> muestreado del ${fechaLargaInforme_(inicio)} al ${fechaLargaInforme_(fin)}
-      (${ordenados.length} día${ordenados.length===1?'':'s'} con datos, ${snap.size} bloque${snap.size===1?'':'s'}/lote${snap.size===1?'':'s'}, ${totalGeneral} piñas en total).</span>
+      (${ordenados.length} día${ordenados.length===1?'':'s'} con datos, ${docs.length} bloque${docs.length===1?'':'s'}/lote${docs.length===1?'':'s'}, ${totalGeneral} piñas en total).</span>
       <button type="button" id="btnUsarRangoGrupo" class="btnGhost" style="padding:4px 10px; font-size:12px;">Usar este rango arriba</button>
     `;
     document.getElementById('btnUsarRangoGrupo').addEventListener('click', () => {
@@ -1405,6 +1439,10 @@ async function actualizarRangoGrupo_(){
     if (miToken !== tokenConsultaRangoGrupo_) return;
     caja.innerHTML = `<span>No se pudo consultar el rango completo (${e.message}).</span>`;
   }
+  // El set completo (o la falta de datos) ya está listo — repinta el resumen
+  // y la lista para que dejen de usar el recorte de los últimos 200.
+  renderResumenGeneral();
+  renderListaSesiones();
 }
 
 function renderResumenGeneral(){
@@ -1426,7 +1464,18 @@ function renderResumenGeneral(){
   // diferencia de todo lo demás arriba que sigue siendo un único total general.
   const bloques = [];
 
-  ultimasSesionesDocs.forEach(({d}) => {
+  // "ultimasSesionesDocs" son solo los últimos 200 documentos de TODA la
+  // empresa (de todos los grupos juntos) — si un grupo tiene varios bloques
+  // que ya no se tocan hace días, otros grupos más activos los sacan de ese
+  // límite y el resumen se ve incompleto ("muy poquita muestra"). Por eso,
+  // en cuanto hay un grupo específico elegido arriba, se usa el set COMPLETO
+  // de ese grupo (ya consultado sin límite por actualizarRangoGrupo_) en vez
+  // del recorte de los últimos 200.
+  const fuenteDocs = (grupoFiltro && datosGrupoSeleccionado && datosGrupoSeleccionado.grupo === grupoFiltro)
+    ? datosGrupoSeleccionado.docs
+    : ultimasSesionesDocs;
+
+  fuenteDocs.forEach(({d}) => {
     if (grupoFiltro && d.grupo !== grupoFiltro) return;
     const dias = d.porDia || {};
     let totalBloque = 0;
@@ -1718,13 +1767,15 @@ function resolverColorCanvas_(c){
  * agrupados por día (para la curva de evolución) y por bloque+lote (para
  * el detalle bloque a bloque), exactamente con la misma lógica que ya usa
  * "Resumen general". ---- */
-function prepararDatosInformeGerencial_(grupo, desdeN, hastaN){
+function prepararDatosInformeGerencial_(docsGrupo, grupo, desdeN, hastaN){
   const diasMap = {}; // fecha -> { total, porColor:{} }
   const bloques = [];
   let total = 0, sinDefectoTotal = 0;
   const porCategoriaAg = {}, porCalibreAg = {}, porColorAg = {}, porDefectoAg = {};
 
-  ultimasSesionesDocs.forEach(({d}) => {
+  // docsGrupo ya viene filtrado por grupo (consulta completa y sin el límite
+  // de 200 — ver generarInformeGerencialWord_), pero se valida igual por si acaso.
+  docsGrupo.forEach(({d}) => {
     if (d.grupo !== grupo) return;
     const dias = d.porDia || {};
     let totalBloque = 0;
@@ -1952,8 +2003,15 @@ async function generarInformeGerencialWord_(grupoFiltro, desdeInput, hastaInput)
   if (!grupoFiltro) { showToast('Elige un grupo arriba (no "Todos los grupos") para generar su informe'); return; }
   if (!desdeInput || !hastaInput) { showToast('Elige un rango de fechas arriba'); return; }
 
+  // Siempre se vuelve a consultar Firestore completo aquí mismo (sin el
+  // límite de 200 documentos que usa la lista general) — así el informe
+  // gerencial nunca sale con información incompleta, ni siquiera si el
+  // caché de datosGrupoSeleccionado estuviera desactualizado por algún motivo.
+  showToast('Consultando los datos completos del grupo…');
+  const docsGrupo = await obtenerDocsCompletosDeGrupo_(grupoFiltro);
+
   const desdeN = desdeInput.replace(/-/g,''), hastaN = hastaInput.replace(/-/g,'');
-  const datos = prepararDatosInformeGerencial_(grupoFiltro, desdeN, hastaN);
+  const datos = prepararDatosInformeGerencial_(docsGrupo, grupoFiltro, desdeN, hastaN);
   if (!datos.total) { showToast('No hay muestreos del Grupo '+grupoFiltro+' en ese rango de fechas'); return; }
 
   showToast('Generando informe gerencial, un momento…');
