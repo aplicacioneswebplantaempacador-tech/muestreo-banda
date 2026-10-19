@@ -549,6 +549,7 @@
         <div class="field"><label for="filtroGrupo">Grupo</label><select id="filtroGrupo"><option value="">Todos los grupos</option></select></div>
         <button type="button" id="btnHoy" class="btnGhost">Hoy</button>
       </div>
+      <div id="rangoGrupoInfo" class="hidden" style="font-size:12.5px; color:var(--text-secondary); background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:8px 12px; margin-bottom:12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;"></div>
       <div id="resumenGeneralContenido"></div>
     </div>
     <div class="panel">
@@ -600,7 +601,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot,
-  collection, query, orderBy, limit, increment, serverTimestamp
+  collection, query, orderBy, limit, increment, serverTimestamp, where, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getAuth, setPersistence, browserLocalPersistence,
@@ -1328,10 +1329,10 @@ function inicializarFiltrosFecha(){
   document.getElementById('filtroHasta').value = hoy;
 }
 inicializarFiltrosFecha();
-function filtrosFechaCambiaron(){ poblarFiltroGrupo(); renderResumenGeneral(); renderListaSesiones(); }
+function filtrosFechaCambiaron(){ poblarFiltroGrupo(); renderResumenGeneral(); renderListaSesiones(); actualizarRangoGrupo_(); }
 document.getElementById('filtroDesde').addEventListener('change', filtrosFechaCambiaron);
 document.getElementById('filtroHasta').addEventListener('change', filtrosFechaCambiaron);
-document.getElementById('filtroGrupo').addEventListener('change', renderResumenGeneral);
+document.getElementById('filtroGrupo').addEventListener('change', () => { renderResumenGeneral(); actualizarRangoGrupo_(); });
 document.getElementById('btnHoy').addEventListener('click', () => { inicializarFiltrosFecha(); filtrosFechaCambiaron(); });
 
 /* Solo lista los grupos que tienen muestras dentro del rango Desde/Hasta actualmente seleccionado */
@@ -1358,6 +1359,52 @@ function poblarFiltroGrupo(){
   grupos.sort((a,b) => a.localeCompare(b, 'es', {numeric:true}));
   sel.innerHTML = '<option value="">Todos los grupos</option>' + grupos.map(g => `<option value="${g}">Grupo ${g}</option>`).join('');
   sel.value = grupos.includes(actual) ? actual : '';
+}
+
+/* Rango real (desde cuándo hasta cuándo) de un grupo, SIN importar el filtro
+ * Desde/Hasta de arriba — consulta Firestore directo por "grupo" (no depende
+ * de los últimos 200 documentos cargados) para que el dato sea exacto y no
+ * "adivinado". Se actualiza cada vez que cambias el grupo seleccionado. */
+let tokenConsultaRangoGrupo_ = 0;
+async function actualizarRangoGrupo_(){
+  const grupo = document.getElementById('filtroGrupo').value;
+  const caja = document.getElementById('rangoGrupoInfo');
+  const miToken = ++tokenConsultaRangoGrupo_;
+  if (!grupo) { caja.classList.add('hidden'); caja.innerHTML = ''; return; }
+  caja.classList.remove('hidden');
+  caja.innerHTML = `<span>🔍 Consultando el rango completo de fechas del Grupo ${grupo}…</span>`;
+  try {
+    const snap = await getDocs(query(collection(db,'sesiones'), where('grupo','==',grupo)));
+    if (miToken !== tokenConsultaRangoGrupo_) return; // ya cambiaste de grupo mientras consultaba
+    const diasConDatos = new Set();
+    let totalGeneral = 0;
+    snap.forEach(docSnap => {
+      const d = docSnap.data();
+      Object.entries(d.porDia || {}).forEach(([fecha, dd]) => {
+        const t = dd.total || 0;
+        if (t > 0) { diasConDatos.add(fecha); totalGeneral += t; }
+      });
+    });
+    if (!diasConDatos.size) {
+      caja.innerHTML = `<span>El Grupo ${grupo} no tiene muestreos registrados todavía.</span>`;
+      return;
+    }
+    const ordenados = [...diasConDatos].sort();
+    const inicio = ordenados[0], fin = ordenados[ordenados.length-1];
+    caja.innerHTML = `
+      <span><b>Grupo ${grupo}:</b> muestreado del ${fechaLargaInforme_(inicio)} al ${fechaLargaInforme_(fin)}
+      (${ordenados.length} día${ordenados.length===1?'':'s'} con datos, ${snap.size} bloque${snap.size===1?'':'s'}/lote${snap.size===1?'':'s'}, ${totalGeneral} piñas en total).</span>
+      <button type="button" id="btnUsarRangoGrupo" class="btnGhost" style="padding:4px 10px; font-size:12px;">Usar este rango arriba</button>
+    `;
+    document.getElementById('btnUsarRangoGrupo').addEventListener('click', () => {
+      document.getElementById('filtroDesde').value = `${inicio.slice(0,4)}-${inicio.slice(4,6)}-${inicio.slice(6,8)}`;
+      document.getElementById('filtroHasta').value = `${fin.slice(0,4)}-${fin.slice(4,6)}-${fin.slice(6,8)}`;
+      filtrosFechaCambiaron();
+    });
+  } catch (e) {
+    if (miToken !== tokenConsultaRangoGrupo_) return;
+    caja.innerHTML = `<span>No se pudo consultar el rango completo (${e.message}).</span>`;
+  }
 }
 
 function renderResumenGeneral(){
