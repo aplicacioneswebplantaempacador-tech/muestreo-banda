@@ -2133,9 +2133,21 @@ async function generarInformeGerencialWord_(grupoFiltro, desdeInput, hastaInput)
     hijos.push(parrafoTexto_(`${b.total} piñas muestreadas entre el ${fechaLargaInforme_(fIni)} y el ${fechaLargaInforme_(fFin)}. ${narrativaColor_(b.dias, 'este bloque')}`));
     const gl = canvasLineasColor_(b.dias, { width:500, height:220 });
     hijos.push(parrafoImagenInforme_(await canvasAPng_(gl.canvas), gl.width, gl.height));
-    // Los porcentajes se calculan sobre b.total (todas las piñas del bloque),
-    // no solo sobre las que sí tienen color — así Verde+Pintona+Madura+Bajo
-    // Peso siempre suma 100%, igual que en la tabla día a día de arriba.
+    // Día a día de ESTE bloque — mismas columnas que la tabla del grupo
+    // completo de arriba, para ver el número exacto de cada día (la curva ya
+    // muestra la tendencia, pero no el dato puntual de cada fecha).
+    hijos.push(tituloInforme_('Día a día', docx.HeadingLevel.HEADING_3));
+    hijos.push(tablaInforme_(
+      ['Fecha','Piñas','Verde','Pintona','Madura','Bajo Peso (sin color)'],
+      b.dias.map(d => {
+        const p = pctColorDia_(d);
+        return [fechaCortaInforme_(d.fecha), String(d.total), `${d.porColor.verde||0} (${p.verde}%)`, `${d.porColor.pintona||0} (${p.pintona}%)`, `${d.porColor.madura||0} (${p.madura}%)`, `${sinColorDia_(d)} (${p.sinColor}%)`];
+      }),
+      { alinearDerecha:true }
+    ));
+    // Totales del período completo de este bloque (mismos porcentajes que ya
+    // tenía el informe — sobre b.total, para que sigan sumando 100%).
+    hijos.push(tituloInforme_('Totales del período', docx.HeadingLevel.HEADING_3));
     const colorBloqueConBajoPeso = COLORES.map(c => {
       const v = b.porColor[c.key]||0;
       return [c.label, String(v), (b.total ? Math.round(v/b.total*100) : 0)+'%'];
