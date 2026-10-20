@@ -1929,19 +1929,45 @@ function canvasAPng_(canvas){
 }
 
 /* ---- Narrativas (texto generado a partir de los números reales, nada inventado) ---- */
+// "Bajo Peso" es fruta que se registra en el total del día pero que, por ser
+// rechazo automático, NUNCA lleva color (ver registrarPina_: el botón
+// "Registrar" queda deshabilitado para fruta normal sin color, así que la
+// única forma de que falte es que sea Bajo Peso). sinColor_ se calcula por
+// resta (piñas del día menos las que sí tienen verde/pintona/madura) para que
+// el reporte SIEMPRE cuadre con el total, sin importar el motivo exacto.
+function sinColorDia_(dia){
+  const t = dia.total || 0;
+  const clasificadas = (dia.porColor.verde||0) + (dia.porColor.pintona||0) + (dia.porColor.madura||0);
+  return Math.max(0, t - clasificadas);
+}
 function pctColorDia_(dia){
   const t = dia.total || 0;
   return {
     verde: t ? Math.round((dia.porColor.verde||0)/t*100) : 0,
     pintona: t ? Math.round((dia.porColor.pintona||0)/t*100) : 0,
     madura: t ? Math.round((dia.porColor.madura||0)/t*100) : 0,
+    sinColor: t ? Math.round(sinColorDia_(dia)/t*100) : 0,
   };
+}
+// Nota sobre Bajo Peso, para no dejar la impresión de que faltan datos: se
+// calcula sobre TODOS los días del rango (no solo el primero o el último),
+// y solo se menciona si representa una porción considerable (≥5%) del total,
+// para no saturar el texto: un 1% o 2% ocasional (normal en cualquier
+// cosecha) no amerita una aclaración aparte.
+function notaBajoPeso_(dias){
+  const totalGeneral = dias.reduce((s,d) => s + (d.total||0), 0);
+  const sinColorGeneral = dias.reduce((s,d) => s + sinColorDia_(d), 0);
+  if (!totalGeneral || !sinColorGeneral) return '';
+  const pct = Math.round(sinColorGeneral/totalGeneral*100);
+  if (pct < 5) return '';
+  return ` Adicionalmente, ${sinColorGeneral} piñas (${pct}% del total) correspondieron a fruta Bajo Peso en este rango — rechazo automático que no se clasifica por color, por eso no entra en los porcentajes de verde/pintona/madura anteriores.`;
 }
 function narrativaColor_(dias, ambito){
   if (!dias.length) return `No hay datos de color registrados para ${ambito} en este rango.`;
   if (dias.length === 1) {
     const p = pctColorDia_(dias[0]);
-    return `El ${fechaLargaInforme_(dias[0].fecha)} fue el único día con muestreo registrado para ${ambito} en este rango: ${p.verde}% verde, ${p.pintona}% pintona y ${p.madura}% madura, sobre ${dias[0].total} piñas.`;
+    const base = `El ${fechaLargaInforme_(dias[0].fecha)} fue el único día con muestreo registrado para ${ambito} en este rango: ${p.verde}% verde, ${p.pintona}% pintona y ${p.madura}% madura, sobre ${dias[0].total} piñas.`;
+    return base + notaBajoPeso_(dias);
   }
   const primero = pctColorDia_(dias[0]), ultimo = pctColorDia_(dias[dias.length-1]);
   const delta = ultimo.madura - primero.madura;
@@ -1950,9 +1976,10 @@ function narrativaColor_(dias, ambito){
     : (delta <= -5
       ? 'una reducción en la proporción de fruta madura hacia el final del período'
       : 'un comportamiento relativamente estable en el índice de color durante el período');
-  return `El ${fechaLargaInforme_(dias[0].fecha)}, ${ambito} inició con ${primero.verde}% verde, ${primero.pintona}% pintona y ${primero.madura}% madura. `
+  const base = `El ${fechaLargaInforme_(dias[0].fecha)}, ${ambito} inició con ${primero.verde}% verde, ${primero.pintona}% pintona y ${primero.madura}% madura. `
     + `Para el ${fechaLargaInforme_(dias[dias.length-1].fecha)}, estas proporciones fueron ${ultimo.verde}% verde, ${ultimo.pintona}% pintona y ${ultimo.madura}% madura, `
     + `lo que refleja ${tendencia}.`;
+  return base + notaBajoPeso_(dias);
 }
 
 /* ---- Construcción de tablas y bloques reutilizables para el .docx ---- */
@@ -2057,11 +2084,14 @@ async function generarInformeGerencialWord_(grupoFiltro, desdeInput, hastaInput)
   hijos.push(parrafoTexto_(narrativaColor_(datos.diasGlobal, 'el grupo completo')));
   const grafLineasGrupo = canvasLineasColor_(datos.diasGlobal, { width:620, height:260 });
   hijos.push(parrafoImagenInforme_(await canvasAPng_(grafLineasGrupo.canvas), grafLineasGrupo.width, grafLineasGrupo.height));
+  // La columna "Bajo Peso" se incluye para que Piñas = Verde + Pintona +
+  // Madura + Bajo Peso SIEMPRE cuadre — sin ella, un día con mucho rechazo
+  // (Bajo Peso no lleva color) parecía tener datos faltantes o en 0%.
   hijos.push(tablaInforme_(
-    ['Fecha','Piñas','Verde','Pintona','Madura'],
+    ['Fecha','Piñas','Verde','Pintona','Madura','Bajo Peso (sin color)'],
     datos.diasGlobal.map(d => {
       const p = pctColorDia_(d);
-      return [fechaCortaInforme_(d.fecha), String(d.total), `${d.porColor.verde||0} (${p.verde}%)`, `${d.porColor.pintona||0} (${p.pintona}%)`, `${d.porColor.madura||0} (${p.madura}%)`];
+      return [fechaCortaInforme_(d.fecha), String(d.total), `${d.porColor.verde||0} (${p.verde}%)`, `${d.porColor.pintona||0} (${p.pintona}%)`, `${d.porColor.madura||0} (${p.madura}%)`, `${sinColorDia_(d)} (${p.sinColor}%)`];
     }),
     { alinearDerecha:true }
   ));
@@ -2103,11 +2133,19 @@ async function generarInformeGerencialWord_(grupoFiltro, desdeInput, hastaInput)
     hijos.push(parrafoTexto_(`${b.total} piñas muestreadas entre el ${fechaLargaInforme_(fIni)} y el ${fechaLargaInforme_(fFin)}. ${narrativaColor_(b.dias, 'este bloque')}`));
     const gl = canvasLineasColor_(b.dias, { width:500, height:220 });
     hijos.push(parrafoImagenInforme_(await canvasAPng_(gl.canvas), gl.width, gl.height));
-    const totalColorBloque = COLORES.reduce((s,c)=>s+(b.porColor[c.key]||0),0) || b.total;
-    hijos.push(tablaInforme_(['Color','Cantidad','%'], COLORES.map(c => {
+    // Los porcentajes se calculan sobre b.total (todas las piñas del bloque),
+    // no solo sobre las que sí tienen color — así Verde+Pintona+Madura+Bajo
+    // Peso siempre suma 100%, igual que en la tabla día a día de arriba.
+    const colorBloqueConBajoPeso = COLORES.map(c => {
       const v = b.porColor[c.key]||0;
-      return [c.label, String(v), Math.round(v/totalColorBloque*100)+'%'];
-    }), { alinearDerecha:true }));
+      return [c.label, String(v), (b.total ? Math.round(v/b.total*100) : 0)+'%'];
+    });
+    const sumaColorBloque = COLORES.reduce((s,c)=>s+(b.porColor[c.key]||0),0);
+    const bajoPesoBloque = Math.max(0, b.total - sumaColorBloque);
+    if (bajoPesoBloque) {
+      colorBloqueConBajoPeso.push(['Bajo Peso (sin color)', String(bajoPesoBloque), (b.total ? Math.round(bajoPesoBloque/b.total*100) : 0)+'%']);
+    }
+    hijos.push(tablaInforme_(['Color','Cantidad','%'], colorBloqueConBajoPeso, { alinearDerecha:true }));
   }
 
   // ---- 7. Conclusión ----
